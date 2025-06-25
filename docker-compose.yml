@@ -1,0 +1,240 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: microfinance_postgres
+    environment:
+      POSTGRES_DB: microfinance_db
+      POSTGRES_USER: microfinance_user
+      POSTGRES_PASSWORD: microfinance_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - microfinance_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U microfinance_user -d microfinance_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: microfinance_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - microfinance_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: microfinance_backend
+    environment:
+      - DATABASE_URL=postgresql://microfinance_user:microfinance_password@postgres:5432/microfinance_db
+      - ASYNC_DATABASE_URL=postgresql+asyncpg://microfinance_user:microfinance_password@postgres:5432/microfinance_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - SECRET_KEY=your-super-secret-key-for-development
+      - DEBUG=True
+      - BACKEND_CORS_ORIGINS=["http://localhost:3000", "http://frontend:3000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - microfinance_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: microfinance_celery_worker
+    environment:
+      - DATABASE_URL=postgresql://microfinance_user:microfinance_password@postgres:5432/microfinance_db
+      - ASYNC_DATABASE_URL=postgresql+asyncpg://microfinance_user:microfinance_password@postgres:5432/microfinance_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - SECRET_KEY=your-super-secret-key-for-development
+      - DEBUG=True
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - microfinance_network
+    command: celery -A app.core.celery worker --loglevel=info
+
+  # Celery Beat (Scheduler)
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: microfinance_celery_beat
+    environment:
+      - DATABASE_URL=postgresql://microfinance_user:microfinance_password@postgres:5432/microfinance_db
+      - ASYNC_DATABASE_URL=postgresql+asyncpg://microfinance_user:microfinance_password@postgres:5432/microfinance_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - SECRET_KEY=your-super-secret-key-for-development
+      - DEBUG=True
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - microfinance_network
+    command: celery -A app.core.celery beat --loglevel=info
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: microfinance_frontend
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+      - VITE_WS_URL=ws://localhost:8000/ws
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - microfinance_network
+    command: npm run dev
+
+  # External Scorecard Service (Mock)
+  scorecard_service:
+    build:
+      context: ./scorecard-service
+      dockerfile: Dockerfile
+    container_name: microfinance_scorecard
+    environment:
+      - PORT=8001
+      - DATABASE_URL=postgresql://microfinance_user:microfinance_password@postgres:5432/microfinance_db
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - microfinance_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
+  # Monitoring - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: microfinance_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - microfinance_network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Monitoring - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: microfinance_grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - microfinance_network
+    depends_on:
+      - prometheus
+
+  # pgAdmin for Database Management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: microfinance_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@microfinance.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - microfinance_network
+    depends_on:
+      - postgres
+
+  # Redis Commander for Redis Management
+  redis_commander:
+    image: rediscommander/redis-commander:latest
+    container_name: microfinance_redis_commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - microfinance_network
+    depends_on:
+      - redis
+
+networks:
+  microfinance_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  pgadmin_data:
