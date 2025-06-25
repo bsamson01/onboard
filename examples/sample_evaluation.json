@@ -1,0 +1,62 @@
+{
+  "evaluation_request": {
+    "scorecard_uuid": "12345678-1234-5678-9012-123456789012",
+    "applicant_id": "APP_001",
+    "request_id": "REQ_001",
+    "user_id": "loan_officer_123",
+    "source_system": "loan_application",
+    "applicant_data": {
+      "monthly_income": 35000,
+      "debt_to_income_ratio": 0.25,
+      "employment_status": "full_time",
+      "credit_history_months": 42,
+      "age": 32,
+      "savings_balance": 75000,
+      "education_level": "bachelor"
+    }
+  },
+  
+  "expected_response": {
+    "id": 1,
+    "uuid": "87654321-4321-8765-2109-876543210987",
+    "scorecard_id": 1,
+    "version_id": 1,
+    "applicant_id": "APP_001",
+    "total_score": 742,
+    "letter_grade": "A",
+    "eligibility": true,
+    "factor_scores": [
+      {
+        "code": "monthly_income",
+        "name": "Monthly Income",
+        "category": "Financial",
+        "points": 80,
+        "max_points": 100,
+        "weight": 2.5,
+        "value": 35000,
+        "reasoning": ["monthly_income=35000 falls in range [30000, 49999], awarded 80 points"]
+      },
+      {
+        "code": "debt_to_income_ratio",
+        "name": "Debt to Income Ratio",
+        "category": "Financial",
+        "points": 75,
+        "max_points": 100,
+        "weight": 2.0,
+        "value": 0.25,
+        "reasoning": ["Expression 'max(0, 100 - (debt_to_income_ratio * 100))' evaluated to 75 points"]
+      }
+    ],
+    "breakdown": {
+      "total_score": 742,
+      "max_possible_score": 850,
+      "letter_grade": "A",
+      "eligibility": true,
+      "summary": "Credit evaluation using Basic Credit Scorecard: Score 742 (Grade A), applicant is eligible for credit.",
+      "warnings": []
+    },
+    "processing_time_ms": 45,
+    "data_completeness": 1.0,
+    "confidence_score": 0.95
+  }
+}

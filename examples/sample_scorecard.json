@@ -1,0 +1,138 @@
+{
+  "scorecard": {
+    "mfi_id": "MFI001",
+    "name": "Basic Credit Scorecard",
+    "description": "Standard scorecard for microfinance loan evaluation",
+    "min_score": 300,
+    "max_score": 850,
+    "passing_score": 600
+  },
+  "version": {
+    "description": "Initial version with basic financial factors",
+    "scoring_factors": [
+      {
+        "name": "Monthly Income",
+        "code": "monthly_income",
+        "description": "Applicant's monthly income in local currency",
+        "category": "Financial",
+        "weight": 2.5,
+        "data_type": "numeric",
+        "is_required": true,
+        "rules": {
+          "thresholds": {
+            "field": "monthly_income",
+            "ranges": [
+              {"min": 50000, "max": 999999, "points": 100, "description": "High income"},
+              {"min": 30000, "max": 49999, "points": 80, "description": "Good income"},
+              {"min": 20000, "max": 29999, "points": 60, "description": "Moderate income"},
+              {"min": 10000, "max": 19999, "points": 40, "description": "Low income"},
+              {"min": 0, "max": 9999, "points": 20, "description": "Very low income"}
+            ]
+          }
+        }
+      },
+      {
+        "name": "Debt to Income Ratio",
+        "code": "debt_to_income_ratio",
+        "description": "Ratio of existing debt to monthly income",
+        "category": "Financial",
+        "weight": 2.0,
+        "data_type": "numeric",
+        "is_required": true,
+        "rules": {
+          "expression": "max(0, 100 - (debt_to_income_ratio * 100))"
+        }
+      },
+      {
+        "name": "Employment Status",
+        "code": "employment_status",
+        "description": "Current employment situation",
+        "category": "Demographic",
+        "weight": 1.5,
+        "data_type": "categorical",
+        "is_required": true,
+        "rules": {
+          "conditions": [
+            {"condition": "employment_status == 'full_time'", "points": 100, "description": "Full-time employed"},
+            {"condition": "employment_status == 'part_time'", "points": 70, "description": "Part-time employed"},
+            {"condition": "employment_status == 'self_employed'", "points": 60, "description": "Self-employed"},
+            {"condition": "employment_status == 'unemployed'", "points": 20, "description": "Unemployed"}
+          ]
+        }
+      },
+      {
+        "name": "Credit History Length",
+        "code": "credit_history_months",
+        "description": "Length of credit history in months",
+        "category": "Credit",
+        "weight": 1.8,
+        "data_type": "numeric",
+        "is_required": false,
+        "default_points": 50,
+        "rules": {
+          "thresholds": {
+            "field": "credit_history_months",
+            "ranges": [
+              {"min": 60, "max": 999, "points": 100, "description": "Excellent history (5+ years)"},
+              {"min": 36, "max": 59, "points": 85, "description": "Good history (3-5 years)"},
+              {"min": 24, "max": 35, "points": 70, "description": "Fair history (2-3 years)"},
+              {"min": 12, "max": 23, "points": 55, "description": "Limited history (1-2 years)"},
+              {"min": 0, "max": 11, "points": 30, "description": "Very limited history"}
+            ]
+          }
+        }
+      },
+      {
+        "name": "Age",
+        "code": "age",
+        "description": "Applicant's age in years",
+        "category": "Demographic",
+        "weight": 0.8,
+        "data_type": "numeric",
+        "is_required": true,
+        "rules": {
+          "conditions": [
+            {"condition": "age >= 18 and age <= 25", "points": 60, "description": "Young adult"},
+            {"condition": "age >= 26 and age <= 35", "points": 90, "description": "Prime working age"},
+            {"condition": "age >= 36 and age <= 50", "points": 100, "description": "Established adult"},
+            {"condition": "age >= 51 and age <= 65", "points": 85, "description": "Mature adult"},
+            {"condition": "age > 65", "points": 70, "description": "Senior"}
+          ]
+        }
+      },
+      {
+        "name": "Savings Account Balance",
+        "code": "savings_balance",
+        "description": "Current savings account balance",
+        "category": "Financial",
+        "weight": 1.2,
+        "data_type": "numeric",
+        "is_required": false,
+        "default_points": 40,
+        "rules": {
+          "expression": "min(100, max(0, (savings_balance / 10000) * 50 + 50))"
+        }
+      },
+      {
+        "name": "Education Level",
+        "code": "education_level",
+        "description": "Highest level of education completed",
+        "category": "Demographic",
+        "weight": 0.7,
+        "data_type": "categorical",
+        "is_required": false,
+        "default_points": 60,
+        "rules": {
+          "conditions": [
+            {"condition": "education_level == 'postgraduate'", "points": 100, "description": "Postgraduate degree"},
+            {"condition": "education_level == 'bachelor'", "points": 90, "description": "Bachelor's degree"},
+            {"condition": "education_level == 'diploma'", "points": 80, "description": "Diploma/Certificate"},
+            {"condition": "education_level == 'secondary'", "points": 70, "description": "Secondary education"},
+            {"condition": "education_level == 'primary'", "points": 50, "description": "Primary education"},
+            {"condition": "education_level == 'none'", "points": 30, "description": "No formal education"}
+          ]
+        }
+      }
+    ]
+  }
+}
