@@ -4,6 +4,8 @@ import logging.handlers
 import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
+from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 
 
@@ -158,17 +160,7 @@ def get_logger(name: str = None) -> logging.Logger:
     return logging.getLogger(name or "app")
 
 
-def log_audit_event(event_type: str, user_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
-    """Log an audit event."""
-    audit_logger = logging.getLogger("app.audit")
-    
-    audit_data = {
-        "event_type": event_type,
-        "user_id": user_id,
-        "details": details or {}
-    }
-    
-    audit_logger.info(f"AUDIT: {event_type}", extra=audit_data)
+# This function moved to log_audit_event_file at the end of the file
 
 
 def log_security_event(event_type: str, ip_address: Optional[str] = None, user_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
@@ -215,3 +207,71 @@ class AuditEvent:
     SCORE_CALCULATED = "score_calculated"
     ALERT_CREATED = "alert_created"
     REPORT_GENERATED = "report_generated"
+
+
+async def log_audit_event(
+    db: AsyncSession,
+    user_id: Optional[str],
+    action: str,
+    resource_type: str,
+    resource_id: Optional[str] = None,
+    old_values: Optional[Dict[str, Any]] = None,
+    new_values: Optional[Dict[str, Any]] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    additional_data: Optional[Dict[str, Any]] = None
+):
+    """
+    Log an audit event to the database.
+    This function is used by the core modules for database audit logging.
+    """
+    from app.models.user import AuditLog
+    
+    try:
+        audit_log = AuditLog(
+            user_id=user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            additional_data=additional_data
+        )
+        
+        db.add(audit_log)
+        await db.commit()
+        
+        # Also log to the file-based audit log
+        log_audit_event_file(action, user_id, {
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "old_values": old_values,
+            "new_values": new_values,
+            "ip_address": ip_address,
+            "additional_data": additional_data
+        })
+        
+    except Exception as e:
+        # If database logging fails, at least log to file
+        logger = get_logger("app.audit")
+        logger.error(f"Failed to log audit event to database: {e}")
+        log_audit_event_file(action, user_id, {
+            "error": str(e),
+            "resource_type": resource_type,
+            "resource_id": resource_id
+        })
+
+
+def log_audit_event_file(event_type: str, user_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
+    """Log an audit event to file (renamed from original log_audit_event)."""
+    audit_logger = logging.getLogger("app.audit")
+    
+    audit_data = {
+        "event_type": event_type,
+        "user_id": user_id,
+        "details": details or {}
+    }
+    
+    audit_logger.info(f"AUDIT: {event_type}", extra=audit_data)

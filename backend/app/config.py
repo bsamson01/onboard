@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = config("ACCESS_TOKEN_EXPIRE_MINUTES", default=30, cast=int)
     REFRESH_TOKEN_EXPIRE_DAYS: int = config("REFRESH_TOKEN_EXPIRE_DAYS", default=7, cast=int)
     ALGORITHM: str = config("ALGORITHM", default="HS256")
+    EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = config("EMAIL_RESET_TOKEN_EXPIRE_HOURS", default=24, cast=int)
     
     # Application Configuration
     DEBUG: bool = config("DEBUG", default=False, cast=bool)
