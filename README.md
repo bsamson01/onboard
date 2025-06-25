@@ -1,147 +1,240 @@
-# Modular Microfinance Onboarding & Loan Management Platform
+# 🏦 Microfinance Customer Onboarding System
 
-A full-featured microfinance platform designed to support onboarding, credit scoring, loan management, risk alerts, and customer engagement with modular external scorecard engine per institution.
+A comprehensive customer onboarding platform for microfinance institutions featuring OCR document processing, real-time credit scoring, and complete audit trails.
 
-## 🏗️ Architecture
+## ✨ Features
 
-- **Backend-driven**: All logic, scoring, and data processing handled server-side
-- **Modular design**: Scorecard engine, notifications, and integrations are swappable components
-- **Role-based access**: Admin, risk officer, loan officer, support, customer
-- **Real-time communication**: Email, in-app, and SMS alerts
-- **Auditability**: Append-only logs, no deletions
-- **No caching**: All data is live/fresh
-
-## 🚀 Tech Stack
-
-- **Backend**: FastAPI with async support
-- **Database**: PostgreSQL + Redis
-- **Queue**: Celery task queue
-- **Frontend**: Vue.js with WebSocket support
-- **Containerization**: Docker + Kubernetes/ECS
-- **Monitoring**: Prometheus, Grafana, ELK
-- **CI/CD**: GitHub Actions
-
-## 📋 Core Modules
-
-### 🔐 User Management & Security
-- JWT/OAuth2 Authentication
-- Role-Based Access Control (RBAC)
-- Multi-factor Authentication
-- Session Tracking & Login Logs
-- Immutable Audit Log
-
-### 👥 Customer Onboarding
-- Multi-step form (personal, contact, financial info)
-- Document Upload with OCR Processing
-- Consent management
-- Initial eligibility scoring
-
-### 📊 Credit Scorecard Microservice
-- External RESTful service per MFI
-- Custom scoring rules, weights, bands (AA-D)
-- Safe rule engine parser
-- Versioned scorecards
-- Admin-configurable UI
-
-### 💰 Loan Application Management
-- Full CRUD operations
-- Application lifecycle management
-- Score + eligibility display
-- Escalation notes and overrides
-
-### ⚠️ Delinquency & Alerts
-- Alert engine with configurable triggers
-- Role-restricted visibility
-- Webhook integration
-- Alert queue management
-
-### 👤 Customer Portal
-- Secure customer login
-- Application tracking
-- Loan management
-- Payment submissions
-- Support ticketing
-
-### 📧 Notification System
-- Transactional emails
-- In-app alerts via WebSocket
-- SMS integration
-- Templated messages
-- Drip campaigns
-
-### 📈 Reporting & Export
-- Backend-generated exports (XLSX/CSV)
-- Filterable reports
-- Delinquency trends
-- Export logs
-
-### 🔌 Integrations
-- ID verification APIs
-- Mobile money platforms
-- Credit bureaus
-- Accounting tools
-- Notification partners
-
-## 🛠️ Development Phases
-
-- **Phase 1**: Core Backend + Onboarding (6-8 weeks) ✅ In Progress
-- **Phase 2**: Scorecard Engine (4-6 weeks)
-- **Phase 3**: Loan App + Alerts (5-7 weeks)
-- **Phase 4**: Customer Portal + Support (6-8 weeks)
-- **Phase 5**: Notifications + Emails (4-6 weeks)
-- **Phase 6**: Reports & Exports (3-5 weeks)
-- **Phase 7**: Integrations + Final Security (5-7 weeks)
+- **5-Step Onboarding Wizard** with progress tracking
+- **OCR Document Processing** with auto-fill capabilities  
+- **Real-time Credit Scoring** via external API
+- **Secure File Upload** with validation and virus scanning
+- **Immutable Audit Trails** for complete transparency
+- **Role-based Access Control** (Admin, Loan Officer, Customer)
+- **Responsive Design** optimized for mobile and desktop
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 14+
-- Redis 6+
-- Docker & Docker Compose
+- Tesseract OCR (for document processing)
 
-### Backend Setup
+### Automated Setup
+```bash
+# Clone and setup everything
+./setup.sh
+
+# Start backend
+cd backend
+source venv/bin/activate
+uvicorn app.main:app --reload
+
+# Start frontend (new terminal)
+cd frontend
+npm run dev
+```
+
+### Manual Setup
+
+#### Backend
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Configure your database and Redis settings in .env
-alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-### Frontend Setup
+#### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### Docker Setup
+## 📍 Access Points
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
+- **Alternative Docs**: http://localhost:8000/redoc
+
+## 🏗️ Architecture
+
+### Tech Stack
+- **Backend**: FastAPI, SQLAlchemy, PostgreSQL, Redis
+- **Frontend**: Vue.js 3, Pinia, Tailwind CSS, Vite
+- **OCR**: Tesseract with custom extraction patterns
+- **Authentication**: JWT with role-based access control
+- **File Storage**: Local filesystem with S3-ready structure
+
+### Project Structure
+```
+├── backend/                 # FastAPI backend
+│   ├── app/
+│   │   ├── api/            # API endpoints
+│   │   ├── core/           # Authentication & utilities
+│   │   ├── models/         # Database models
+│   │   ├── schemas/        # Pydantic schemas
+│   │   └── services/       # Business logic
+│   └── alembic/            # Database migrations
+├── frontend/               # Vue.js frontend
+│   ├── src/
+│   │   ├── components/     # Reusable components
+│   │   ├── views/          # Page components
+│   │   ├── stores/         # Pinia state management
+│   │   └── services/       # API integration
+└── docs/                   # Additional documentation
+```
+
+## 🔧 Configuration
+
+### Environment Variables
+Key settings in `backend/.env`:
 ```bash
-docker-compose up -d
+# Database
+DATABASE_URL=postgresql://user:pass@localhost/microfinance
+
+# Security  
+SECRET_KEY=your-secret-key
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# External Services
+SCORECARD_API_URL=http://localhost:8001
+SCORECARD_API_KEY=your-api-key
+
+# File Upload
+MAX_FILE_SIZE=10485760  # 10MB
+UPLOAD_DIR=./uploads
+
+# OCR
+TESSERACT_CMD=/usr/bin/tesseract
 ```
 
 ## 🧪 Testing
 
+### Backend Tests
 ```bash
-# Backend tests
 cd backend
 pytest
+```
 
-# Frontend tests
+### Frontend Tests
+```bash
 cd frontend
 npm run test
 ```
 
-## 📚 API Documentation
+## 📝 API Usage
 
-Once the backend is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+### Create Onboarding Application
+```bash
+curl -X POST http://localhost:8000/api/v1/onboarding/applications \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+### Complete Step
+```bash
+curl -X POST http://localhost:8000/api/v1/onboarding/applications/{app_id}/steps/1 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "step_number": 1,
+    "step_data": {
+      "first_name": "John",
+      "last_name": "Doe",
+      "date_of_birth": "1990-01-15"
+    }
+  }'
+```
+
+### Upload Document
+```bash
+curl -X POST http://localhost:8000/api/v1/onboarding/applications/{app_id}/documents \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@document.jpg" \
+  -F "document_type=national_id"
+```
+
+## 🛡️ Security Features
+
+- **JWT Authentication** with refresh tokens
+- **Role-based permissions** for different user types
+- **Rate limiting** to prevent abuse
+- **Input validation** on all endpoints
+- **File type validation** and virus scanning
+- **Audit logging** of all user actions
+- **Data encryption** for sensitive information
+
+## � Database Schema
+
+### Core Models
+- **User**: Authentication and user management
+- **Customer**: Extended customer information
+- **OnboardingApplication**: Application lifecycle
+- **OnboardingStep**: Individual step tracking
+- **Document**: File storage and OCR results
+- **AuditLog**: Immutable activity tracking
+
+## 🎯 Onboarding Flow
+
+1. **Personal Information**: Name, DOB, ID number, demographics
+2. **Contact Information**: Address, phone, emergency contacts
+3. **Financial Profile**: Employment, income, banking details
+4. **Document Upload**: ID documents with OCR processing
+5. **Consent & Scoring**: Consent collection and credit assessment
+
+## � External Integrations
+
+### OCR Processing
+- Tesseract OCR engine for text extraction
+- Support for National ID and Passport documents
+- Auto-fill form fields from extracted data
+- Confidence scoring for quality assessment
+
+### Credit Scoring
+- External scorecard API integration
+- Real-time credit assessment
+- Grade mapping (AA to D scale)
+- Personalized recommendations
+
+### File Storage
+- Local filesystem with organized structure
+- S3-compatible for cloud deployment
+- File integrity verification
+- Secure access controls
+
+## 📈 Monitoring & Analytics
+
+- **Application Progress**: Track conversion rates
+- **OCR Performance**: Document processing success rates
+- **User Behavior**: Step completion analytics
+- **System Health**: Performance and error monitoring
+- **Audit Reports**: Complete activity trails
+
+## 🚀 Production Deployment
+
+### Docker
+```bash
+# Backend
+docker build -t microfinance-backend backend/
+docker run -p 8000:8000 microfinance-backend
+
+# Frontend
+docker build -t microfinance-frontend frontend/
+docker run -p 3000:3000 microfinance-frontend
+```
+
+### Environment Setup
+1. Set up PostgreSQL database
+2. Configure Redis for caching
+3. Install Tesseract OCR
+4. Set up external scorecard API
+5. Configure email/SMS providers
+6. Set up SSL certificates
+7. Configure monitoring tools
 
 ## 🤝 Contributing
 
@@ -157,4 +250,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🆘 Support
 
-For support and questions, please open an issue or contact the development team. 
+- **Documentation**: See `ONBOARDING_SYSTEM_SUMMARY.md` for detailed documentation
+- **API Docs**: Available at `/docs` when running the backend
+- **Issues**: Create GitHub issues for bugs and feature requests
+
+---
+
+Built with ❤️ for financial inclusion and accessibility. 
