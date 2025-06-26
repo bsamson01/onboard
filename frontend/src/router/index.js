@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 import Home from '@/views/Home.vue'
 import Login from '@/views/Login.vue'
 import OnboardingWizard from '@/views/OnboardingWizard.vue'
+import CustomerDashboard from '@/views/CustomerDashboard.vue'
 
 const routes = [
   {
@@ -14,6 +15,12 @@ const routes = [
     path: '/login',
     name: 'Login',
     component: Login
+  },
+  {
+    path: '/dashboard',
+    name: 'CustomerDashboard',
+    component: CustomerDashboard,
+    meta: { requiresAuth: true }
   },
   {
     path: '/onboarding',

@@ -7,7 +7,7 @@ import asyncio
 from datetime import datetime
 import logging
 
-from app.database import get_async_session
+from app.database import get_async_db
 from app.models.user import User
 from app.core.auth import require_admin
 from app.config import settings
@@ -53,7 +53,7 @@ class ConfigurationUpdateRequest(BaseModel):
 @router.get("/dashboard")
 async def get_admin_dashboard(
     current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Get admin dashboard data."""
     try:
@@ -82,7 +82,7 @@ async def get_users(
     skip: int = 0,
     limit: int = 100,
     current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Get list of users (admin only)."""
     try:
@@ -283,7 +283,7 @@ async def get_audit_logs(
     action_filter: str = None,
     user_filter: str = None,
     current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Get audit logs with filtering."""
     try:
@@ -338,7 +338,7 @@ async def delete_user(
     user_id: str,
     request: Request,
     current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Delete user (admin only)."""
     try:
@@ -463,7 +463,7 @@ async def _get_configuration_status() -> Dict[str, Any]:
 async def _check_database_health() -> Dict[str, Any]:
     """Check database health."""
     try:
-        async with get_async_session() as session:
+        async with get_async_db() as session:
             await session.execute(text("SELECT 1"))
             return {
                 "status": "healthy",

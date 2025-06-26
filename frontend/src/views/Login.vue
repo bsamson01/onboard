@@ -147,8 +147,8 @@ const handleLogin = async () => {
     const result = await authStore.login(form.email, form.password)
     
     if (result.success) {
-      // Redirect to home or intended page
-      router.push('/')
+      // Redirect to dashboard after successful login
+      router.push('/dashboard')
     } else {
       loginError.value = result.error
     }

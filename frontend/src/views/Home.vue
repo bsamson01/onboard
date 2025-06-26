@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+  <div v-if="!authStore.isAuthenticated" class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
     <!-- Header -->
     <header class="bg-white shadow-sm border-b">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -9,18 +9,11 @@
           </div>
           <div class="flex items-center space-x-4">
             <button
-              v-if="!authStore.isAuthenticated"
               @click="router.push('/login')"
               class="btn-primary"
             >
               Sign In
             </button>
-            <div v-else class="flex items-center space-x-4">
-              <span class="text-sm text-gray-700">Welcome, {{ authStore.user?.first_name }}!</span>
-              <button @click="authStore.logout" class="btn-secondary">
-                Logout
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -40,14 +33,6 @@
         <div class="mt-5 max-w-md mx-auto sm:flex sm:justify-center md:mt-8">
           <div class="rounded-md shadow">
             <button
-              v-if="authStore.isAuthenticated"
-              @click="startOnboarding"
-              class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 md:py-4 md:text-lg md:px-10"
-            >
-              Start Application
-            </button>
-            <button
-              v-else
               @click="router.push('/login')"
               class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 md:py-4 md:text-lg md:px-10"
             >
@@ -158,32 +143,17 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { onboardingService } from '@/services/onboarding'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const startOnboarding = async () => {
-  try {
-    // Check if user already has an active application
-    const applicationsResponse = await onboardingService.getApplications()
-    const activeApplication = applicationsResponse.data.find(app => 
-      ['draft', 'in_progress', 'pending_documents'].includes(app.status)
-    )
-    
-    if (activeApplication) {
-      // Continue existing application
-      router.push(`/onboarding?app=${activeApplication.id}`)
-    } else {
-      // Create new application
-      const response = await onboardingService.createApplication()
-      router.push(`/onboarding?app=${response.data.id}`)
-    }
-  } catch (error) {
-    console.error('Failed to start onboarding:', error)
-    // Handle error - maybe show a notification
+onMounted(() => {
+  // Redirect authenticated users to dashboard
+  if (authStore.isAuthenticated) {
+    router.push('/dashboard')
   }
-}
+})
 </script>

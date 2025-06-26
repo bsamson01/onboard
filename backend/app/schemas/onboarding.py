@@ -12,7 +12,7 @@ class OnboardingStepRequest(BaseModel):
     step_data: Dict[str, Any]
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "step_number": 1,
                 "step_data": {
@@ -33,11 +33,11 @@ class PersonalInfoRequest(BaseModel):
     first_name: str = Field(..., min_length=2, max_length=100)
     last_name: str = Field(..., min_length=2, max_length=100)
     date_of_birth: date
-    gender: str = Field(..., regex="^(male|female|other)$")
-    marital_status: str = Field(..., regex="^(single|married|divorced|widowed)$")
+    gender: str = Field(..., pattern="^(male|female|other)$")
+    marital_status: str = Field(..., pattern="^(single|married|divorced|widowed)$")
     nationality: str = Field(..., min_length=2, max_length=50)
     id_number: str = Field(..., min_length=5, max_length=50)
-    id_type: str = Field(default="national_id", regex="^(national_id|passport|drivers_license)$")
+    id_type: str = Field(default="national_id", pattern="^(national_id|passport|drivers_license)$")
 
     @validator('date_of_birth')
     def validate_age(cls, v):
@@ -66,14 +66,14 @@ class ContactInfoRequest(BaseModel):
 
 
 class FinancialProfileRequest(BaseModel):
-    employment_status: str = Field(..., regex="^(employed|self_employed|unemployed|student|retired)$")
+    employment_status: str = Field(..., pattern="^(employed|self_employed|unemployed|student|retired)$")
     employer_name: Optional[str] = Field(None, max_length=255)
     job_title: Optional[str] = Field(None, max_length=100)
     monthly_income: float = Field(..., ge=0)
     employment_duration_months: Optional[int] = Field(None, ge=0)
     bank_name: str = Field(..., min_length=2, max_length=100)
     bank_account_number: str = Field(..., min_length=5, max_length=50)
-    bank_account_type: str = Field(..., regex="^(savings|checking|current)$")
+    bank_account_type: str = Field(..., pattern="^(savings|checking|current)$")
     has_other_loans: bool = Field(default=False)
     other_loans_details: Optional[List[Dict[str, Any]]] = Field(default=None)
 
@@ -94,7 +94,7 @@ class ConsentRequest(BaseModel):
     consent_data_processing: bool = Field(...)
     consent_credit_check: bool = Field(...)
     consent_marketing: bool = Field(default=False)
-    preferred_communication: str = Field(default="email", regex="^(email|sms|phone)$")
+    preferred_communication: str = Field(default="email", pattern="^(email|sms|phone)$")
 
     @validator('consent_data_processing')
     def validate_data_processing_consent(cls, v):
@@ -138,8 +138,8 @@ class OnboardingStepResponse(BaseModel):
 
 class EligibilityResult(BaseModel):
     score: int = Field(..., ge=0, le=1000)
-    grade: str = Field(..., regex="^(AA|A|B|C|D)$")
-    eligibility: str = Field(..., regex="^(eligible|ineligible|pending)$")
+    grade: str = Field(..., pattern="^(AA|A|B|C|D)$")
+    eligibility: str = Field(..., pattern="^(eligible|ineligible|pending)$")
     message: str
     breakdown: Optional[Dict[str, Any]] = None
     recommendations: Optional[List[str]] = None

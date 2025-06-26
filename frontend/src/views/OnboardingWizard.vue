@@ -5,12 +5,18 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <div class="flex items-center">
-            <h1 class="text-xl font-semibold text-gray-900">Application Onboarding</h1>
-            <span v-if="application" class="ml-4 text-sm text-gray-500">
+            <h1 class="text-xl font-semibold text-gray-900">
+              {{ isCompleted ? 'Application Complete' : 'Application Onboarding' }}
+            </h1>
+            <span v-if="application && !isCompleted" class="ml-4 text-sm text-gray-500">
               #{{ application.application_number }}
             </span>
           </div>
-          <button @click="router.push('/')" class="text-gray-600 hover:text-gray-900">
+          <button 
+            v-if="!isCompleted"
+            @click="router.push('/')" 
+            class="text-gray-600 hover:text-gray-900"
+          >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
@@ -20,8 +26,8 @@
     </header>
 
     <div class="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      <!-- Progress Bar -->
-      <div class="mb-8">
+      <!-- Progress Bar - Only show when not completed -->
+      <div v-if="!isCompleted" class="mb-8">
         <div class="flex items-center justify-between">
           <div v-for="step in steps" :key="step.number" class="flex flex-col items-center">
             <div
@@ -104,6 +110,7 @@ import ContactInfoStep from '@/components/onboarding/ContactInfoStep.vue'
 import FinancialProfileStep from '@/components/onboarding/FinancialProfileStep.vue'
 import DocumentUploadStep from '@/components/onboarding/DocumentUploadStep.vue'
 import ConsentScoringStep from '@/components/onboarding/ConsentScoringStep.vue'
+import ApplicationCompleteStep from '@/components/onboarding/ApplicationCompleteStep.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -113,6 +120,7 @@ const currentStep = ref(1)
 const error = ref('')
 const isLoading = ref(false)
 const stepData = reactive({})
+const isCompleted = ref(false)
 
 const steps = [
   { number: 1, name: 'Personal Info', description: 'Basic details', component: 'PersonalInfoStep' },
@@ -127,10 +135,14 @@ const stepComponents = {
   ContactInfoStep,
   FinancialProfileStep,
   DocumentUploadStep,
-  ConsentScoringStep
+  ConsentScoringStep,
+  ApplicationCompleteStep
 }
 
 const currentStepComponent = computed(() => {
+  if (isCompleted.value) {
+    return ApplicationCompleteStep
+  }
   const step = steps.find(s => s.number === currentStep.value)
   return stepComponents[step?.component] || PersonalInfoStep
 })
@@ -143,6 +155,13 @@ const isStepCompleted = (stepNumber) => {
 
 const getCurrentStepData = () => {
   if (!application.value) return {}
+  
+  if (isCompleted.value) {
+    // When completed, return step 5 data for the completion component
+    const step = application.value.steps.find(s => s.step_number === 5)
+    return step?.step_data || {}
+  }
+  
   const step = application.value.steps.find(s => s.step_number === currentStep.value)
   return step?.step_data || {}
 }
@@ -186,6 +205,13 @@ const handleNext = async (data) => {
     
     // Update local step data
     stepData[currentStep.value] = data
+    
+    // If this is step 5 (final step), submit the application
+    if (currentStep.value === 5) {
+      await onboardingService.submitApplication(application.value.id)
+      isCompleted.value = true
+      return
+    }
     
     // Reload application to get updated status
     await loadApplication()

@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 import logging
 
-from app.database import get_async_session
+from app.database import get_async_db
 from app.models.user import User
 from app.models.onboarding import (
     Customer, OnboardingApplication, OnboardingStep, Document,
@@ -40,7 +40,7 @@ audit_service = AuditService()
 ONBOARDING_STEPS = {
     1: {"name": "Personal Information", "required_fields": ["first_name", "last_name", "date_of_birth", "gender", "id_number"]},
     2: {"name": "Contact Information", "required_fields": ["phone_number", "email", "address_line1", "city", "country"]},
-    3: {"name": "Financial Profile", "required_fields": ["employment_status", "monthly_income", "bank_name", "bank_account_number"]},
+    3: {"name": "Financial Profile", "required_fields": ["employment_status", "monthly_income"]},
     4: {"name": "Document Upload", "required_fields": ["id_document"]},
     5: {"name": "Consent & Scoring", "required_fields": ["consent_data_processing", "consent_credit_check"]}
 }
@@ -50,7 +50,7 @@ ONBOARDING_STEPS = {
 async def create_onboarding_application(
     request: Request,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Create a new onboarding application for the current user."""
     try:
@@ -158,7 +158,7 @@ async def create_onboarding_application(
 @router.get("/applications", response_model=List[OnboardingApplicationResponse])
 async def get_user_onboarding_applications(
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Get all onboarding applications for the current user."""
     try:
@@ -211,7 +211,7 @@ async def get_user_onboarding_applications(
 async def get_onboarding_application(
     application_id: str,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Get a specific onboarding application."""
     try:
@@ -282,7 +282,7 @@ async def complete_onboarding_step(
     step_request: OnboardingStepRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Complete a specific step in the onboarding process."""
     try:
@@ -415,8 +415,17 @@ async def _process_personal_info_step(step_data: dict, application_id: str, curr
         customer = customer_result.scalar()
         
         if customer:
+            # Convert date string to date object if provided
+            date_of_birth = None
+            if step_data.get('date_of_birth'):
+                try:
+                    from datetime import datetime
+                    date_of_birth = datetime.strptime(step_data['date_of_birth'], '%Y-%m-%d').date()
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+            
             # Update customer with personal information
-            customer.date_of_birth = step_data.get('date_of_birth')
+            customer.date_of_birth = date_of_birth
             customer.gender = step_data.get('gender')
             customer.marital_status = step_data.get('marital_status')
             customer.nationality = step_data.get('nationality')
@@ -494,6 +503,15 @@ async def _process_financial_profile_step(step_data: dict, application_id: str, 
             if field not in step_data or not step_data[field]:
                 raise HTTPException(status_code=400, detail=f"Required field '{field}' is missing")
         
+        # Conditional validation for bank details
+        number_of_bank_accounts = step_data.get('number_of_bank_accounts', 0)
+        if number_of_bank_accounts and number_of_bank_accounts > 0:
+            # If user has bank accounts, bank details are required
+            bank_required_fields = ['bank_name', 'bank_account_number']
+            for field in bank_required_fields:
+                if field not in step_data or not step_data[field]:
+                    raise HTTPException(status_code=400, detail=f"Required field '{field}' is missing when you have bank accounts")
+        
         # Get customer record
         customer_stmt = select(Customer).join(OnboardingApplication).where(
             OnboardingApplication.id == application_id
@@ -508,9 +526,18 @@ async def _process_financial_profile_step(step_data: dict, application_id: str, 
             customer.job_title = step_data.get('job_title')
             customer.monthly_income = step_data.get('monthly_income')
             customer.employment_duration_months = step_data.get('employment_duration_months')
-            customer.bank_name = step_data.get('bank_name')
-            customer.bank_account_number = step_data.get('bank_account_number')
-            customer.bank_account_type = step_data.get('bank_account_type')
+            
+            # Only set bank details if user has bank accounts
+            if number_of_bank_accounts and number_of_bank_accounts > 0:
+                customer.bank_name = step_data.get('bank_name')
+                customer.bank_account_number = step_data.get('bank_account_number')
+                customer.bank_account_type = step_data.get('bank_account_type')
+            else:
+                # Clear bank details if no accounts
+                customer.bank_name = None
+                customer.bank_account_number = None
+                customer.bank_account_type = None
+            
             customer.has_other_loans = step_data.get('has_other_loans', False)
             customer.other_loans_details = step_data.get('other_loans_details', [])
         
@@ -601,7 +628,7 @@ async def upload_document(
     file: UploadFile = File(...),
     request: Request = None,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Upload a document for the onboarding application."""
     try:
@@ -716,7 +743,7 @@ async def submit_onboarding_application(
     application_id: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Submit the completed onboarding application for review."""
     try:
@@ -909,7 +936,7 @@ async def _autofill_customer_data_from_ocr(customer: Customer, extracted_data: d
 async def get_onboarding_progress(
     application_id: str,
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ):
     """Get detailed progress information for an onboarding application."""
     try:

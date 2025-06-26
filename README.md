@@ -55,7 +55,7 @@ npm run dev
 
 ## 📍 Access Points
 
-- **Frontend**: http://localhost:3000
+- **Frontend**: http://localhost:4000
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
 - **Alternative Docs**: http://localhost:8000/redoc
@@ -168,16 +168,6 @@ curl -X POST http://localhost:8000/api/v1/onboarding/applications/{app_id}/docum
 - **Audit logging** of all user actions
 - **Data encryption** for sensitive information
 
-## � Database Schema
-
-### Core Models
-- **User**: Authentication and user management
-- **Customer**: Extended customer information
-- **OnboardingApplication**: Application lifecycle
-- **OnboardingStep**: Individual step tracking
-- **Document**: File storage and OCR results
-- **AuditLog**: Immutable activity tracking
-
 ## 🎯 Onboarding Flow
 
 1. **Personal Information**: Name, DOB, ID number, demographics
@@ -186,7 +176,7 @@ curl -X POST http://localhost:8000/api/v1/onboarding/applications/{app_id}/docum
 4. **Document Upload**: ID documents with OCR processing
 5. **Consent & Scoring**: Consent collection and credit assessment
 
-## � External Integrations
+## 🎯 External Integrations
 
 ### OCR Processing
 - Tesseract OCR engine for text extraction
@@ -224,7 +214,7 @@ docker run -p 8000:8000 microfinance-backend
 
 # Frontend
 docker build -t microfinance-frontend frontend/
-docker run -p 3000:3000 microfinance-frontend
+docker run -p 4000:4000 microfinance-frontend
 ```
 
 ### Environment Setup

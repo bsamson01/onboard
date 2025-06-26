@@ -8,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.config import settings
-from app.database import get_async_session
+from app.database import get_async_db
 from app.models.user import User
+from app.schemas.auth import UserCreate
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -26,6 +27,51 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     """Generate password hash."""
     return pwd_context.hash(password)
+
+
+async def create_user(session: AsyncSession, user_data: UserCreate) -> User:
+    """Create a new user in the database."""
+    # Check if user already exists by email
+    stmt = select(User).where(User.email == user_data.email)
+    result = await session.execute(stmt)
+    existing_user = result.scalar()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Check if username already exists
+    stmt = select(User).where(User.username == user_data.username)
+    result = await session.execute(stmt)
+    existing_username = result.scalar()
+    
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+    
+    # Create new user
+    hashed_password = get_password_hash(user_data.password)
+    user = User(
+        email=user_data.email,
+        username=user_data.username,
+        hashed_password=hashed_password,
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
+        role=user_data.role,
+        is_active=True,
+        is_locked=False,
+        failed_login_attempts=0
+    )
+    
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    
+    return user
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -52,7 +98,7 @@ def verify_token(token: str) -> Optional[dict]:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_db)
 ) -> User:
     """Get the current authenticated user from JWT token."""
     credentials_exception = HTTPException(
@@ -68,7 +114,7 @@ async def get_current_user(
             raise credentials_exception
         
         # Extract user ID from token
-        user_id: str = payload.get("sub")
+        user_id: str = payload.get("user_id")
         if user_id is None:
             raise credentials_exception
             

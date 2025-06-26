@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 from app.models.user import AuditLog
-from app.database import get_async_session
+from app.database import AsyncDatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,9 @@ class AuditService:
         try:
             # Use provided session or create new one
             if session is None:
-                async with get_async_session() as session:
+                async with AsyncDatabaseManager() as db_session:
                     return await self._write_audit_log(
-                        session, user_id, action, resource_type, resource_id,
+                        db_session, user_id, action, resource_type, resource_id,
                         old_values, new_values, ip_address, user_agent, additional_data
                     )
             else:

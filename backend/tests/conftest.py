@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 import httpx
 
 from app.main import app
-from app.database import Base, get_async_session
+from app.database import Base, get_async_db
 from app.models.user import User, UserRole
 from app.models.onboarding import Customer, OnboardingApplication
 from app.config import settings
@@ -66,7 +66,7 @@ async def client(test_db: AsyncSession) -> AsyncGenerator[TestClient, None]:
     async def override_get_db():
         yield test_db
     
-    app.dependency_overrides[get_async_session] = override_get_db
+    app.dependency_overrides[get_async_db] = override_get_db
     
     with TestClient(app) as test_client:
         yield test_client

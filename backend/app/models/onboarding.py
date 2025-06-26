@@ -1,10 +1,9 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum, Numeric, Date
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
 import uuid
-from app.database import Base
+from app.database import Base, UUID, JSONB
 
 
 class OnboardingStatus(str, Enum):

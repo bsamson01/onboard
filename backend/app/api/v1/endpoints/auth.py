@@ -1,15 +1,14 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update
 
 from app.database import get_async_db
-from app.core.auth import authenticate_user, create_access_token, get_current_user, create_user
-from app.core.security import get_password_hash, verify_password
+from app.core.auth import authenticate_user, create_access_token, get_current_user, create_user, get_password_hash, verify_password
 from app.models.user import User, UserRole
 from app.schemas.auth import Token, UserCreate, UserResponse, LoginRequest, PasswordChange
-from app.schemas.user import UserInDB
 from app.config import settings
 from app.core.logging import log_security_event, log_audit_event, SecurityEvent, AuditEvent
 
@@ -80,7 +79,7 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_async_db)
 ) -> Any:
-    """Login endpoint that returns JWT tokens."""
+    """Login endpoint that returns JWT tokens (OAuth2 form-based)."""
     try:
         # Authenticate user
         user = await authenticate_user(db, form_data.username, form_data.password)
@@ -143,7 +142,93 @@ async def login(
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "user": user
+            "user": UserResponse.model_validate(user).model_dump()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_security_event(
+            SecurityEvent.SUSPICIOUS_ACTIVITY,
+            ip_address=request.client.host,
+            details={"error": str(e), "event": "login_failed"}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed"
+        )
+
+
+@router.post("/login-json", response_model=Token)
+async def login_json(
+    login_data: LoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db)
+) -> Any:
+    """Login endpoint that accepts JSON data with email and password."""
+    try:
+        # Authenticate user using email
+        user = await authenticate_user(db, login_data.email, login_data.password)
+        
+        if not user:
+            log_security_event(
+                SecurityEvent.LOGIN_FAILED,
+                ip_address=request.client.host,
+                details={"email": login_data.email, "reason": "invalid_credentials"}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        if not user.is_active:
+            log_security_event(
+                SecurityEvent.LOGIN_FAILED,
+                ip_address=request.client.host,
+                user_id=str(user.id),
+                details={"reason": "account_inactive"}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is inactive"
+            )
+        
+        if user.is_locked:
+            log_security_event(
+                SecurityEvent.LOGIN_LOCKED,
+                ip_address=request.client.host,
+                user_id=str(user.id),
+                details={"reason": "account_locked"}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is locked. Please contact support."
+            )
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email, "user_id": str(user.id)},
+            expires_delta=access_token_expires
+        )
+        
+        # Update last login
+        await update_user_last_login(db, user.id, request.client.host)
+        
+        # Log successful login
+        log_security_event(
+            SecurityEvent.LOGIN_SUCCESS,
+            ip_address=request.client.host,
+            user_id=str(user.id),
+            details={"login_method": "password_json"}
+        )
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "user": UserResponse.model_validate(user).model_dump()
         }
         
     except HTTPException:
@@ -312,18 +397,26 @@ async def verify_token(
 
 # Helper functions (these would typically be in a separate service module)
 async def get_user_by_email(db: AsyncSession, email: str):
-    """Get user by email - placeholder for actual implementation."""
-    # TODO: Implement database query
-    pass
+    """Get user by email."""
+    stmt = select(User).where(User.email == email)
+    result = await db.execute(stmt)
+    return result.scalar()
 
 
 async def update_user_last_login(db: AsyncSession, user_id: str, ip_address: str):
-    """Update user's last login timestamp - placeholder for actual implementation."""
-    # TODO: Implement database update
-    pass
+    """Update user's last login timestamp."""
+    stmt = update(User).where(User.id == user_id).values(
+        last_login=datetime.utcnow()
+    )
+    await db.execute(stmt)
+    await db.commit()
 
 
 async def update_user_password(db: AsyncSession, user_id: str, hashed_password: str):
-    """Update user's password - placeholder for actual implementation."""
-    # TODO: Implement database update
-    pass
+    """Update user's password."""
+    stmt = update(User).where(User.id == user_id).values(
+        hashed_password=hashed_password,
+        password_changed_at=datetime.utcnow()
+    )
+    await db.execute(stmt)
+    await db.commit()

@@ -65,7 +65,7 @@ class TestAuditService:
         mock_get_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_get_session.__aexit__ = AsyncMock(return_value=None)
         
-        monkeypatch.setattr("app.services.audit_service.get_async_session", lambda: mock_get_session)
+        monkeypatch.setattr("app.services.audit_service.get_async_db", lambda: mock_get_session)
         
         with patch.object(audit_service, '_write_audit_log', return_value=True) as mock_write:
             result = await audit_service.log_onboarding_action(

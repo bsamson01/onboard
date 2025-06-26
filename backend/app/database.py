@@ -1,8 +1,57 @@
-from sqlalchemy import create_engine, MetaData
+from sqlalchemy import create_engine, MetaData, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.config import settings
+import re
+import json
+
+# Database type compatibility layer
+def get_database_types():
+    """Return appropriate database types based on the database URL."""
+    is_sqlite = "sqlite" in settings.DATABASE_URL.lower()
+    
+    if is_sqlite:
+        # SQLite compatible types
+        class UUID(String):
+            """SQLite-compatible UUID type that stores UUIDs as strings."""
+            def __init__(self, *args, **kwargs):
+                self.as_uuid = kwargs.pop('as_uuid', True)
+                length = kwargs.pop('length', 36)
+                super().__init__(length, *args, **kwargs)
+            def bind_processor(self, dialect):
+                def process(value):
+                    if value is not None:
+                        return str(value)
+                    return value
+                return process
+        
+        class JSONB(Text):
+            """SQLite-compatible JSONB type that stores JSON as text."""
+            def bind_processor(self, dialect):
+                def process(value):
+                    if value is not None:
+                        return json.dumps(value)
+                    return value
+                return process
+            
+            def result_processor(self, dialect, coltype):
+                def process(value):
+                    if value is not None:
+                        return json.loads(value)
+                    return value
+                return process
+            
+    else:
+        # PostgreSQL types
+        from sqlalchemy.dialects.postgresql import UUID, JSONB
+        UUIDType = UUID
+        JSONBType = JSONB
+    
+    return UUID, JSONB
+
+# Get the appropriate types for the current database
+UUID, JSONB = get_database_types()
 
 # Sync database engine and session (for migrations and non-async operations)
 engine = create_engine(
@@ -20,8 +69,6 @@ async_engine = create_async_engine(
     settings.ASYNC_DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=300,
-    pool_size=5,
-    max_overflow=0,
     echo=settings.DEBUG,
 )
 

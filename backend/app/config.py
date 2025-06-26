@@ -1,13 +1,14 @@
 from typing import List, Optional
-from pydantic import BaseSettings, validator
+from pydantic_settings import BaseSettings
+from pydantic import field_validator
 import os
 from decouple import config
 
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = config("DATABASE_URL")
-    ASYNC_DATABASE_URL: str = config("ASYNC_DATABASE_URL")
+    DATABASE_URL: str = config("DATABASE_URL", default="sqlite:///./app.db")
+    ASYNC_DATABASE_URL: str = config("ASYNC_DATABASE_URL", default="sqlite+aiosqlite:///./app.db")
     
     # Redis Configuration
     REDIS_URL: str = config("REDIS_URL", default="redis://localhost:6379/0")
@@ -30,7 +31,8 @@ class Settings(BaseSettings):
     # CORS Configuration
     BACKEND_CORS_ORIGINS: List[str] = []
     
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
     def assemble_cors_origins(cls, v):
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
