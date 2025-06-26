@@ -36,21 +36,21 @@
           </div>
 
           <div class="space-y-2">
-            <label for="phone" class="block text-sm font-semibold text-gray-700">Phone Number *</label>
+            <label for="phone_number" class="block text-sm font-semibold text-gray-700">Phone Number *</label>
             <input
-              id="phone"
-              v-model="formData.phone"
+              id="phone_number"
+              v-model="formData.phone_number"
               type="tel"
               required
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.phone }"
+              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.phone_number }"
               placeholder="Enter your phone number"
             />
-            <p v-if="errors.phone" class="text-sm text-red-600 flex items-center">
+            <p v-if="errors.phone_number" class="text-sm text-red-600 flex items-center">
               <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
               </svg>
-              {{ errors.phone }}
+              {{ errors.phone_number }}
             </p>
           </div>
 
@@ -73,21 +73,59 @@
           </div>
 
           <div class="space-y-2">
-            <label for="emergency_contact" class="block text-sm font-semibold text-gray-700">Emergency Contact *</label>
+            <label for="emergency_contact_name" class="block text-sm font-semibold text-gray-700">Emergency Contact Name *</label>
             <input
-              id="emergency_contact"
-              v-model="formData.emergency_contact"
+              id="emergency_contact_name"
+              v-model="formData.emergency_contact_name"
               type="text"
               required
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact }"
-              placeholder="Enter emergency contact name and phone"
+              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_name }"
+              placeholder="Enter emergency contact name"
             />
-            <p v-if="errors.emergency_contact" class="text-sm text-red-600 flex items-center">
+            <p v-if="errors.emergency_contact_name" class="text-sm text-red-600 flex items-center">
               <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
               </svg>
-              {{ errors.emergency_contact }}
+              {{ errors.emergency_contact_name }}
+            </p>
+          </div>
+
+          <div class="space-y-2">
+            <label for="emergency_contact_phone" class="block text-sm font-semibold text-gray-700">Emergency Contact Phone *</label>
+            <input
+              id="emergency_contact_phone"
+              v-model="formData.emergency_contact_phone"
+              type="tel"
+              required
+              class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
+              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_phone }"
+              placeholder="Enter emergency contact phone"
+            />
+            <p v-if="errors.emergency_contact_phone" class="text-sm text-red-600 flex items-center">
+              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+              </svg>
+              {{ errors.emergency_contact_phone }}
+            </p>
+          </div>
+
+          <div class="space-y-2">
+            <label for="emergency_contact_relationship" class="block text-sm font-semibold text-gray-700">Emergency Contact Relationship *</label>
+            <input
+              id="emergency_contact_relationship"
+              v-model="formData.emergency_contact_relationship"
+              type="text"
+              required
+              class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
+              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_relationship }"
+              placeholder="Enter relationship (e.g., Spouse, Parent, Friend)"
+            />
+            <p v-if="errors.emergency_contact_relationship" class="text-sm text-red-600 flex items-center">
+              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+              </svg>
+              {{ errors.emergency_contact_relationship }}
             </p>
           </div>
         </div>
@@ -105,21 +143,21 @@
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="space-y-2">
-            <label for="street_address" class="block text-sm font-semibold text-gray-700">Street Address *</label>
+            <label for="address_line1" class="block text-sm font-semibold text-gray-700">Street Address *</label>
             <input
-              id="street_address"
-              v-model="formData.street_address"
+              id="address_line1"
+              v-model="formData.address_line1"
               type="text"
               required
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.street_address }"
+              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.address_line1 }"
               placeholder="Enter your street address"
             />
-            <p v-if="errors.street_address" class="text-sm text-red-600 flex items-center">
+            <p v-if="errors.address_line1" class="text-sm text-red-600 flex items-center">
               <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
               </svg>
-              {{ errors.street_address }}
+              {{ errors.address_line1 }}
             </p>
           </div>
 
@@ -143,21 +181,21 @@
           </div>
 
           <div class="space-y-2">
-            <label for="state" class="block text-sm font-semibold text-gray-700">State/Province *</label>
+            <label for="state_province" class="block text-sm font-semibold text-gray-700">State/Province *</label>
             <input
-              id="state"
-              v-model="formData.state"
+              id="state_province"
+              v-model="formData.state_province"
               type="text"
               required
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.state }"
+              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.state_province }"
               placeholder="Enter your state or province"
             />
-            <p v-if="errors.state" class="text-sm text-red-600 flex items-center">
+            <p v-if="errors.state_province" class="text-sm text-red-600 flex items-center">
               <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
               </svg>
-              {{ errors.state }}
+              {{ errors.state_province }}
             </p>
           </div>
 
@@ -306,12 +344,14 @@ const errors = reactive({})
 
 const formData = reactive({
   email: '',
-  phone: '',
+  phone_number: '',
   alternative_phone: '',
-  emergency_contact: '',
-  street_address: '',
+  emergency_contact_name: '',
+  emergency_contact_phone: '',
+  emergency_contact_relationship: '',
+  address_line1: '',
   city: '',
-  state: '',
+  state_province: '',
   postal_code: '',
   country: '',
   residence_type: '',
@@ -321,7 +361,23 @@ const formData = reactive({
 onMounted(() => {
   // Load existing data if available
   if (props.stepData && Object.keys(props.stepData).length > 0) {
-    Object.assign(formData, props.stepData)
+    const data = { ...props.stepData }
+    
+    // Map old field names to new ones for backward compatibility
+    if (data.phone && !data.phone_number) {
+      data.phone_number = data.phone
+    }
+    if (data.street_address && !data.address_line1) {
+      data.address_line1 = data.street_address
+    }
+    if (data.state && !data.state_province) {
+      data.state_province = data.state
+    }
+    if (data.emergency_contact && !data.emergency_contact_name) {
+      data.emergency_contact_name = data.emergency_contact
+    }
+    
+    Object.assign(formData, data)
   }
 })
 
@@ -344,30 +400,38 @@ const validateForm = () => {
     errors.email = 'Please enter a valid email address'
   }
   
-  if (!formData.phone?.trim()) {
-    errors.phone = 'Phone number is required'
-  } else if (!validatePhone(formData.phone)) {
-    errors.phone = 'Please enter a valid phone number'
+  if (!formData.phone_number?.trim()) {
+    errors.phone_number = 'Phone number is required'
+  } else if (!validatePhone(formData.phone_number)) {
+    errors.phone_number = 'Please enter a valid phone number'
   }
   
   if (formData.alternative_phone && !validatePhone(formData.alternative_phone)) {
     errors.alternative_phone = 'Please enter a valid phone number'
   }
   
-  if (!formData.emergency_contact?.trim()) {
-    errors.emergency_contact = 'Emergency contact is required'
+  if (!formData.emergency_contact_name?.trim()) {
+    errors.emergency_contact_name = 'Emergency contact name is required'
   }
   
-  if (!formData.street_address?.trim()) {
-    errors.street_address = 'Street address is required'
+  if (!formData.emergency_contact_phone?.trim()) {
+    errors.emergency_contact_phone = 'Emergency contact phone is required'
+  }
+  
+  if (!formData.emergency_contact_relationship?.trim()) {
+    errors.emergency_contact_relationship = 'Emergency contact relationship is required'
+  }
+  
+  if (!formData.address_line1?.trim()) {
+    errors.address_line1 = 'Street address is required'
   }
   
   if (!formData.city?.trim()) {
     errors.city = 'City is required'
   }
   
-  if (!formData.state?.trim()) {
-    errors.state = 'State/Province is required'
+  if (!formData.state_province?.trim()) {
+    errors.state_province = 'State/Province is required'
   }
   
   if (!formData.postal_code?.trim()) {

@@ -213,13 +213,8 @@ const handleNext = async (data) => {
       return
     }
     
-    // Reload application to get updated status
+    // For steps 1-4: reload application to get updated status and move to next step
     await loadApplication()
-    
-    // Move to next step if not at the end
-    if (currentStep.value < steps.length) {
-      currentStep.value += 1
-    }
     
   } catch (error) {
     console.error('Failed to save step:', error)

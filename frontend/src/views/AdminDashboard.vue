@@ -76,6 +76,62 @@
             />
           </div>
 
+          <!-- Applications Tab -->
+          <div v-if="activeTab === 'applications'" class="space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+              <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-medium text-gray-900">Application Management</h3>
+                <button 
+                  @click="navigateToApplications"
+                  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  Review Applications
+                </button>
+              </div>
+              
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-blue-50 rounded-lg p-4">
+                  <h4 class="text-sm font-medium text-blue-800">Pending Review</h4>
+                  <p class="text-2xl font-bold text-blue-600">{{ dashboardData.pending_review_count || 0 }}</p>
+                  <p class="text-sm text-blue-600">Applications awaiting review</p>
+                </div>
+                
+                <div class="bg-green-50 rounded-lg p-4">
+                  <h4 class="text-sm font-medium text-green-800">Approved</h4>
+                  <p class="text-2xl font-bold text-green-600">{{ dashboardData.approved_count || 0 }}</p>
+                  <p class="text-sm text-green-600">Applications approved</p>
+                </div>
+                
+                <div class="bg-red-50 rounded-lg p-4">
+                  <h4 class="text-sm font-medium text-red-800">Rejected</h4>
+                  <p class="text-2xl font-bold text-red-600">{{ dashboardData.rejected_count || 0 }}</p>
+                  <p class="text-sm text-red-600">Applications rejected</p>
+                </div>
+              </div>
+              
+              <div class="mt-6">
+                <h4 class="text-sm font-medium text-gray-900 mb-3">Quick Actions</h4>
+                <div class="flex space-x-4">
+                  <button 
+                    @click="navigateToApplications"
+                    class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    View All Applications
+                  </button>
+                  <button 
+                    @click="navigateToApplications('under_review')"
+                    class="inline-flex items-center px-3 py-2 border border-blue-300 shadow-sm text-sm leading-4 font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100"
+                  >
+                    Review Pending
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Users Tab -->
           <div v-if="activeTab === 'users'" class="space-y-6">
             <UsersPanel :users="users" @refresh="loadUsers" @delete="deleteUser" />
@@ -208,6 +264,7 @@ const externalServicesStatusClass = computed(() => {
 const tabs = [
   { id: 'health', name: 'System Health' },
   { id: 'services', name: 'External Services' },
+  { id: 'applications', name: 'Applications' },
   { id: 'users', name: 'Users' },
   { id: 'logs', name: 'Audit Logs' }
 ]
@@ -325,6 +382,14 @@ const showAlert = (message, type = 'success') => {
   setTimeout(() => {
     alertMessage.value = ''
   }, 5000)
+}
+
+const navigateToApplications = (status = null) => {
+  if (status) {
+    router.push(`/applications?status=${status}`)
+  } else {
+    router.push('/applications')
+  }
 }
 
 // Check authentication and authorization

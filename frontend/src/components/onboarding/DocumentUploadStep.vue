@@ -230,6 +230,21 @@
         </ul>
       </div>
 
+      <!-- Error Display -->
+      <div v-if="errors.upload" class="bg-red-50 border border-red-200 rounded-xl p-6">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-red-800">Upload Error</h3>
+            <p class="mt-1 text-sm text-red-700">{{ errors.upload }}</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Navigation Buttons -->
       <div class="flex justify-between pt-8">
         <button
@@ -268,6 +283,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { onboardingService } from '@/services/onboarding'
 
 const props = defineProps({
   application: {
@@ -286,6 +302,13 @@ const isSubmitting = ref(false)
 const errors = reactive({})
 
 const uploadedFiles = reactive({
+  government_id: null,
+  proof_of_address: null,
+  bank_statement: null,
+  pay_stub: null
+})
+
+const uploadedDocuments = reactive({
   government_id: null,
   proof_of_address: null,
   bank_statement: null,
@@ -339,6 +362,20 @@ const validateForm = () => {
   return Object.keys(errors.value).length === 0
 }
 
+const uploadDocument = async (file, documentType) => {
+  try {
+    const response = await onboardingService.uploadDocument(
+      props.application.id, 
+      documentType, 
+      file
+    )
+    return response.data
+  } catch (error) {
+    console.error(`Error uploading ${documentType}:`, error)
+    throw error
+  }
+}
+
 const handleSubmit = async () => {
   if (!validateForm()) {
     return
@@ -347,23 +384,73 @@ const handleSubmit = async () => {
   isSubmitting.value = true
   
   try {
-    // Create FormData for file upload
-    const formData = new FormData()
+    // Upload each document individually
+    const uploadPromises = []
     
-    // Add files to FormData
-    Object.keys(uploadedFiles).forEach(key => {
-      if (uploadedFiles[key]) {
-        formData.append(key, uploadedFiles[key])
+    // Map field names to document types
+    const documentTypeMap = {
+      government_id: 'national_id',
+      proof_of_address: 'proof_of_residence',
+      bank_statement: 'bank_statement',
+      pay_stub: 'payslip'
+    }
+    
+    // Upload required documents first
+    if (uploadedFiles.government_id) {
+      uploadPromises.push(
+        uploadDocument(uploadedFiles.government_id, documentTypeMap.government_id)
+          .then(result => {
+            uploadedDocuments.government_id = result
+          })
+      )
+    }
+    
+    if (uploadedFiles.proof_of_address) {
+      uploadPromises.push(
+        uploadDocument(uploadedFiles.proof_of_address, documentTypeMap.proof_of_address)
+          .then(result => {
+            uploadedDocuments.proof_of_address = result
+          })
+      )
+    }
+    
+    // Upload optional documents
+    if (uploadedFiles.bank_statement) {
+      uploadPromises.push(
+        uploadDocument(uploadedFiles.bank_statement, documentTypeMap.bank_statement)
+          .then(result => {
+            uploadedDocuments.bank_statement = result
+          })
+      )
+    }
+    
+    if (uploadedFiles.pay_stub) {
+      uploadPromises.push(
+        uploadDocument(uploadedFiles.pay_stub, documentTypeMap.pay_stub)
+          .then(result => {
+            uploadedDocuments.pay_stub = result
+          })
+      )
+    }
+    
+    // Wait for all uploads to complete
+    await Promise.all(uploadPromises)
+    
+    // Create step data with document references
+    const stepData = {
+      documents: uploadedDocuments,
+      uploaded_files: {
+        government_id: uploadedFiles.government_id?.name,
+        proof_of_address: uploadedFiles.proof_of_address?.name,
+        bank_statement: uploadedFiles.bank_statement?.name,
+        pay_stub: uploadedFiles.pay_stub?.name
       }
-    })
+    }
     
-    // Add metadata
-    formData.append('application_id', props.application?.id || '')
-    formData.append('step_number', '4')
-    
-    emit('next', formData)
+    emit('next', stepData)
   } catch (error) {
     console.error('Error uploading files:', error)
+    errors.upload = 'Failed to upload documents. Please try again.'
   } finally {
     isSubmitting.value = false
   }
@@ -372,12 +459,22 @@ const handleSubmit = async () => {
 onMounted(() => {
   // Load existing data if available
   if (props.stepData && Object.keys(props.stepData).length > 0) {
-    // Handle existing uploaded files if any
-    Object.keys(props.stepData).forEach(key => {
-      if (props.stepData[key] && typeof props.stepData[key] === 'object') {
-        uploadedFiles[key] = props.stepData[key]
-      }
-    })
+    // Handle existing uploaded documents
+    if (props.stepData.documents) {
+      Object.assign(uploadedDocuments, props.stepData.documents)
+    }
+    
+    // Handle existing uploaded files info
+    if (props.stepData.uploaded_files) {
+      Object.keys(props.stepData.uploaded_files).forEach(key => {
+        if (props.stepData.uploaded_files[key]) {
+          // Create a mock file object for display
+          uploadedFiles[key] = {
+            name: props.stepData.uploaded_files[key]
+          }
+        }
+      })
+    }
   }
 })
 </script> 

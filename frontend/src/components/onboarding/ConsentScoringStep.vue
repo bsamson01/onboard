@@ -21,7 +21,7 @@
               <div class="flex-shrink-0 mt-1">
                 <input
                   id="credit_check_consent"
-                  v-model="formData.credit_check_consent"
+                  v-model="consent.consent_credit_check"
                   type="checkbox"
                   required
                   class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-all duration-200"
@@ -43,7 +43,7 @@
             <div class="flex-shrink-0 mt-1">
               <input
                 id="data_processing_consent"
-                v-model="formData.data_processing_consent"
+                v-model="consent.consent_data_processing"
                 type="checkbox"
                 required
                 class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-all duration-200"
@@ -64,7 +64,7 @@
             <div class="flex-shrink-0 mt-1">
               <input
                 id="terms_acceptance"
-                v-model="formData.terms_acceptance"
+                v-model="consent.terms_acceptance"
                 type="checkbox"
                 required
                 class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-all duration-200"
@@ -85,7 +85,7 @@
             <div class="flex-shrink-0 mt-1">
               <input
                 id="marketing_consent"
-                v-model="formData.marketing_consent"
+                v-model="consent.consent_marketing"
                 type="checkbox"
                 class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-all duration-200"
               />
@@ -343,7 +343,10 @@ const applicationSummary = reactive({
 const formData = reactive({
   loan_amount: null,
   loan_term_months: '',
-  additional_notes: ''
+  additional_notes: '',
+  credit_score_range: '',
+  risk_tolerance: '',
+  loan_purpose: ''
 })
 
 const hasAllRequiredConsent = computed(() => {
@@ -430,6 +433,11 @@ const validateForm = () => {
     return false
   }
   
+  if (!formData.loan_purpose) {
+    errors.loan_purpose = 'Loan purpose is required'
+    return false
+  }
+  
   if (!formData.loan_amount || formData.loan_amount < 100) {
     errors.loan_amount = 'Loan amount is required and must be at least $100'
     return false
@@ -479,6 +487,20 @@ onMounted(async () => {
     // Handle consent fields
     if (data.consent) {
       Object.assign(consent, data.consent)
+    } else {
+      // Handle consent fields at top level
+      if (data.consent_credit_check !== undefined) {
+        consent.consent_credit_check = data.consent_credit_check
+      }
+      if (data.consent_data_processing !== undefined) {
+        consent.consent_data_processing = data.consent_data_processing
+      }
+      if (data.terms_acceptance !== undefined) {
+        consent.terms_acceptance = data.terms_acceptance
+      }
+      if (data.consent_marketing !== undefined) {
+        consent.consent_marketing = data.consent_marketing
+      }
     }
     
     // Handle form data fields
@@ -490,6 +512,15 @@ onMounted(async () => {
     }
     if (data.additional_notes !== undefined) {
       formData.additional_notes = data.additional_notes
+    }
+    if (data.credit_score_range !== undefined) {
+      formData.credit_score_range = data.credit_score_range
+    }
+    if (data.risk_tolerance !== undefined) {
+      formData.risk_tolerance = data.risk_tolerance
+    }
+    if (data.loan_purpose !== undefined) {
+      formData.loan_purpose = data.loan_purpose
     }
     
     // Handle other fields

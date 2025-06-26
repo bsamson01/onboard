@@ -147,8 +147,13 @@ const handleLogin = async () => {
     const result = await authStore.login(form.email, form.password)
     
     if (result.success) {
-      // Redirect to dashboard after successful login
-      router.push('/dashboard')
+      // Redirect to appropriate dashboard based on user role
+      const userRole = authStore.user?.role
+      if (userRole === 'admin' || userRole === 'loan_officer' || userRole === 'risk_officer') {
+        router.push('/admin')
+      } else {
+        router.push('/dashboard')
+      }
     } else {
       loginError.value = result.error
     }
