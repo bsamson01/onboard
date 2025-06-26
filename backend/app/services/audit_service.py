@@ -311,6 +311,33 @@ class AuditService:
             additional_data={"milestone": "application_submitted"}
         )
     
+    async def log_status_change(
+        self,
+        user_id: str,
+        application_id: str,
+        from_status: str,
+        to_status: str,
+        reason: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ):
+        """Log application status change."""
+        await self.log_onboarding_action(
+            user_id=user_id,
+            action="application_status_changed",
+            resource_type="loan_application",
+            resource_id=application_id,
+            old_values={"status": from_status},
+            new_values={"status": to_status, "reason": reason},
+            ip_address=ip_address,
+            user_agent=user_agent,
+            additional_data={
+                "from_status": from_status,
+                "to_status": to_status,
+                "status_change_reason": reason
+            }
+        )
+    
     async def log_validation_error(
         self,
         user_id: str,
