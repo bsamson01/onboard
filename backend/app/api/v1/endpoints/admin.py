@@ -15,6 +15,9 @@ from app.services.scorecard_service import ScorecardService
 from app.services.audit_service import AuditService
 from app.core.logging import log_audit_event, AuditEvent
 from pydantic import BaseModel, HttpUrl
+from app.models.onboarding import OnboardingApplication, OnboardingStatus
+from app.models.loan import ApplicationStatus
+from app.services.status_service import StatusService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -22,6 +25,7 @@ logger = logging.getLogger(__name__)
 # Initialize services
 scorecard_service = ScorecardService()
 audit_service = AuditService()
+status_service = StatusService()
 
 
 class ExternalServiceConfig(BaseModel):
@@ -340,9 +344,9 @@ async def delete_user(
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_async_db)
 ):
-    """Delete user (admin only)."""
+    """Delete a user (admin only)."""
     try:
-        # Check if user exists
+        # Get user to delete
         stmt = select(User).where(User.id == user_id)
         result = await session.execute(stmt)
         user_to_delete = result.scalar()
@@ -353,36 +357,26 @@ async def delete_user(
                 detail="User not found"
             )
         
-        # Prevent deletion of admin users (safety check)
-        if user_to_delete.role.value == "admin":
+        # Prevent self-deletion
+        if str(user_to_delete.id) == str(current_user.id):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete admin users"
+                detail="Cannot delete your own account"
             )
-        
-        # Store user data for audit
-        deleted_user_data = {
-            "id": str(user_to_delete.id),
-            "email": user_to_delete.email,
-            "username": user_to_delete.username,
-            "role": user_to_delete.role.value
-        }
         
         # Delete user
         await session.delete(user_to_delete)
         await session.commit()
         
-        # Log user deletion
-        await audit_service.log_onboarding_action(
+        # Log the action
+        await log_audit_event(
+            AuditEvent.USER_DELETED,
             user_id=str(current_user.id),
-            action="user_deleted",
-            resource_type="user",
-            resource_id=user_id,
-            old_values=deleted_user_data,
-            new_values=None,
-            ip_address=request.client.host,
-            user_agent=request.headers.get("user-agent"),
-            additional_data={"deleted_by": str(current_user.id)}
+            details={
+                "deleted_user_id": str(user_to_delete.id),
+                "deleted_user_email": user_to_delete.email,
+                "ip_address": request.client.host
+            }
         )
         
         return {"message": "User deleted successfully"}
@@ -391,9 +385,106 @@ async def delete_user(
         raise
     except Exception as e:
         logger.error(f"Failed to delete user: {str(e)}")
+        await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user"
+        )
+
+
+@router.post("/applications/{application_id}/unlock")
+async def unlock_application_for_editing(
+    application_id: str,
+    request: Request,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Unlock an application for editing by changing status back to IN_PROGRESS (admin only)."""
+    try:
+        # First try to find as onboarding application
+        stmt = select(OnboardingApplication).where(OnboardingApplication.id == application_id)
+        result = await session.execute(stmt)
+        onboarding_app = result.scalar()
+        
+        if onboarding_app:
+            # Handle onboarding application
+            if onboarding_app.status not in [OnboardingStatus.UNDER_REVIEW, OnboardingStatus.APPROVED, OnboardingStatus.REJECTED]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Application is not in a locked state that can be unlocked"
+                )
+            
+            # Change status back to IN_PROGRESS
+            onboarding_app.status = OnboardingStatus.IN_PROGRESS
+            await session.commit()
+            
+            # Log the action
+            await log_audit_event(
+                AuditEvent.APPLICATION_UNLOCKED,
+                user_id=str(current_user.id),
+                details={
+                    "application_id": str(application_id),
+                    "application_type": "onboarding",
+                    "previous_status": onboarding_app.status.value,
+                    "new_status": "in_progress",
+                    "ip_address": request.client.host
+                }
+            )
+            
+            return {
+                "message": "Application unlocked successfully",
+                "application_id": application_id,
+                "previous_status": onboarding_app.status.value,
+                "new_status": "in_progress"
+            }
+        
+        # If not found as onboarding, try loan application
+        from app.models.loan import LoanApplication
+        stmt = select(LoanApplication).where(LoanApplication.id == application_id)
+        result = await session.execute(stmt)
+        loan_app = result.scalar()
+        
+        if loan_app:
+            # Handle loan application using status service
+            if loan_app.status not in [ApplicationStatus.UNDER_REVIEW, ApplicationStatus.APPROVED, ApplicationStatus.REJECTED]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Application is not in a locked state that can be unlocked"
+                )
+            
+            # Use status service to change status
+            updated_app = await status_service.update_application_status(
+                session=session,
+                application_id=application_id,
+                new_status=ApplicationStatus.IN_PROGRESS,
+                user=current_user,
+                reason="Application unlocked by admin for editing",
+                notes="Application unlocked to allow customer to make changes",
+                ip_address=request.client.host,
+                user_agent=request.headers.get("user-agent")
+            )
+            
+            return {
+                "message": "Application unlocked successfully",
+                "application_id": application_id,
+                "previous_status": loan_app.status.value,
+                "new_status": "in_progress"
+            }
+        
+        # If neither found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to unlock application: {str(e)}")
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unlock application"
         )
 
 

@@ -36,6 +36,7 @@ class StatusService:
                 ApplicationStatus.APPROVED: ["admin", "loan_officer", "risk_officer"],      # Approval
                 ApplicationStatus.REJECTED: ["admin", "loan_officer", "risk_officer"],      # Rejection
                 ApplicationStatus.AWAITING_DISBURSEMENT: ["admin", "loan_officer"],         # Direct to disbursement
+                ApplicationStatus.IN_PROGRESS: ["admin"],                                   # Admin can unlock for editing
             },
             ApplicationStatus.APPROVED: {
                 ApplicationStatus.AWAITING_DISBURSEMENT: ["admin", "loan_officer"],         # Move to disbursement

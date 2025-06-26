@@ -210,6 +210,7 @@ class AuditEvent:
     APPLICATION_SUBMITTED = "application_submitted"
     APPLICATION_APPROVED = "application_approved"
     APPLICATION_REJECTED = "application_rejected"
+    APPLICATION_UNLOCKED = "application_unlocked"
     DOCUMENT_UPLOADED = "document_uploaded"
     DOCUMENT_VERIFIED = "document_verified"
     SCORE_CALCULATED = "score_calculated"

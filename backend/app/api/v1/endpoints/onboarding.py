@@ -41,7 +41,7 @@ ONBOARDING_STEPS = {
     1: {"name": "Personal Information", "required_fields": ["first_name", "last_name", "date_of_birth", "gender", "id_number"]},
     2: {"name": "Contact Information", "required_fields": ["phone_number", "email", "address_line1", "city", "country"]},
     3: {"name": "Financial Profile", "required_fields": ["employment_status", "monthly_income"]},
-    4: {"name": "Document Upload", "required_fields": ["id_document"]},
+    4: {"name": "Document Upload", "required_fields": []},
     5: {"name": "Consent & Scoring", "required_fields": ["consent_data_processing", "consent_credit_check"]}
 }
 
@@ -305,7 +305,7 @@ async def complete_onboarding_step(
         if application.status not in [OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS]:
             raise HTTPException(
                 status_code=400, 
-                detail="Application cannot be modified in its current status"
+                detail="Application cannot be modified in its current status. Please contact support if you need to make changes."
             )
         
         # Get the specific step
@@ -343,7 +343,7 @@ async def complete_onboarding_step(
             application.current_step = application.total_steps
             application.status = OnboardingStatus.PENDING_DOCUMENTS if step_number < 4 else OnboardingStatus.UNDER_REVIEW
         else:
-            application.current_step = max(application.current_step, step_number + 1)
+            application.current_step = min(max(application.current_step, step_number + 1), application.total_steps)
             application.status = OnboardingStatus.IN_PROGRESS
         
         await session.commit()
@@ -391,6 +391,26 @@ async def _process_step_data(
     elif step_number == 3:  # Financial Profile
         return await _process_financial_profile_step(step_data, application_id, current_user, session)
     elif step_number == 4:  # Document Upload (handled separately)
+        # Check if at least one ID document has been uploaded
+        customer_stmt = select(Customer).join(OnboardingApplication).where(
+            OnboardingApplication.id == application_id
+        )
+        customer_result = await session.execute(customer_stmt)
+        customer = customer_result.scalar()
+        
+        if customer:
+            # Check for uploaded ID documents
+            docs_stmt = select(Document).where(
+                Document.customer_id == customer.id,
+                Document.document_type.in_([DocumentType.NATIONAL_ID, DocumentType.PASSPORT])
+            )
+            id_docs = await session.execute(docs_stmt)
+            if not id_docs.scalars().first():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please upload at least one ID document (Government ID or Passport) before proceeding"
+                )
+        
         return step_data
     elif step_number == 5:  # Consent & Scoring
         return await _process_consent_and_scoring_step(step_data, application_id, current_user, session)
