@@ -1,6 +1,6 @@
 from .user import User, UserRole, UserSession, AuditLog
 from .onboarding import Customer, OnboardingApplication, Document, OnboardingStep
-from .loan import LoanApplication, LoanStatus, CreditScore, LoanDecision
+from .loan import LoanApplication, LoanStatus, CreditScore, LoanDecision, ApplicationStatus, ApplicationStatusHistory
 from .alert import Alert, AlertType, AlertStatus
 
 __all__ = [
@@ -16,6 +16,8 @@ __all__ = [
     "LoanStatus",
     "CreditScore",
     "LoanDecision",
+    "ApplicationStatus",
+    "ApplicationStatusHistory",
     "Alert",
     "AlertType",
     "AlertStatus",

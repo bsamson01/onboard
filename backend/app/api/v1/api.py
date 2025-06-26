@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, customers, onboarding, loans, alerts, admin
+from app.api.v1.endpoints import auth, users, customers, onboarding, loans, alerts, admin, status
 
 api_router = APIRouter()
 
@@ -37,6 +37,13 @@ api_router.include_router(
     loans.router, 
     prefix="/loans", 
     tags=["Loans"]
+)
+
+# Application status management routes
+api_router.include_router(
+    status.router, 
+    prefix="/status", 
+    tags=["Application Status"]
 )
 
 # Alert management routes

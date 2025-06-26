@@ -6,7 +6,20 @@ import uuid
 from app.database import Base, UUID, JSONB
 
 
+# Unified Application Status enum for the complete lifecycle
+class ApplicationStatus(str, Enum):
+    IN_PROGRESS = "in_progress"      # Application not yet submitted (replaces DRAFT)
+    SUBMITTED = "submitted"          # User completed onboarding, awaiting review
+    UNDER_REVIEW = "under_review"    # Staff member actively reviewing
+    APPROVED = "approved"            # Approved by staff
+    AWAITING_DISBURSEMENT = "awaiting_disbursement"  # Approved but funds not yet disbursed
+    DONE = "done"                    # Funds disbursed and process completed
+    REJECTED = "rejected"            # Rejected by staff, with visible reason
+    CANCELLED = "cancelled"          # Manually cancelled by user
+
+
 class LoanApplicationStatus(str, Enum):
+    """Legacy enum - kept for backward compatibility"""
     DRAFT = "draft"
     SUBMITTED = "submitted"
     UNDER_REVIEW = "under_review"
@@ -55,8 +68,11 @@ class LoanApplication(Base):
     loan_purpose = Column(Text, nullable=False)
     repayment_period_months = Column(Integer, nullable=False)
     
-    # Status and Processing
-    status = Column(SQLEnum(LoanApplicationStatus), nullable=False, default=LoanApplicationStatus.DRAFT)
+    # Unified Status System
+    status = Column(SQLEnum(ApplicationStatus), nullable=False, default=ApplicationStatus.IN_PROGRESS)
+    
+    # Legacy status for backward compatibility
+    legacy_status = Column(SQLEnum(LoanApplicationStatus), nullable=True)
     priority = Column(String(20), default="normal")  # low, normal, high, urgent
     
     # Assignment and Review
@@ -69,6 +85,7 @@ class LoanApplication(Base):
     decision_date = Column(DateTime(timezone=True))
     decision_made_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     rejection_reason = Column(Text)
+    cancellation_reason = Column(Text)  # New field for user cancellations
     approval_conditions = Column(JSONB)
     
     # Risk Assessment
@@ -84,7 +101,11 @@ class LoanApplication(Base):
     # Timestamps
     submitted_at = Column(DateTime(timezone=True))
     reviewed_at = Column(DateTime(timezone=True))
+    approved_at = Column(DateTime(timezone=True))
+    rejected_at = Column(DateTime(timezone=True))
+    cancelled_at = Column(DateTime(timezone=True))
     disbursed_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -94,25 +115,70 @@ class LoanApplication(Base):
     decision_made_by = relationship("User", foreign_keys=[decision_made_by_id])
     credit_scores = relationship("CreditScore", back_populates="loan_application", cascade="all, delete-orphan")
     decisions = relationship("LoanDecision", back_populates="loan_application", cascade="all, delete-orphan")
+    status_history = relationship("ApplicationStatusHistory", back_populates="application", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<LoanApplication(id={self.id}, application_number={self.application_number}, status={self.status})>"
     
     @property
     def is_approved(self) -> bool:
-        return self.status == LoanApplicationStatus.APPROVED
+        return self.status == ApplicationStatus.APPROVED
     
     @property
     def is_rejected(self) -> bool:
-        return self.status == LoanApplicationStatus.REJECTED
+        return self.status == ApplicationStatus.REJECTED
+    
+    @property
+    def is_cancelled(self) -> bool:
+        return self.status == ApplicationStatus.CANCELLED
     
     @property
     def is_active(self) -> bool:
-        return self.status in [LoanApplicationStatus.ACTIVE, LoanApplicationStatus.DISBURSED]
+        return self.status in [ApplicationStatus.IN_PROGRESS, ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW]
+    
+    @property
+    def is_completed(self) -> bool:
+        return self.status in [ApplicationStatus.DONE, ApplicationStatus.REJECTED, ApplicationStatus.CANCELLED]
+    
+    @property
+    def can_be_cancelled_by_customer(self) -> bool:
+        return self.status in [ApplicationStatus.IN_PROGRESS, ApplicationStatus.SUBMITTED]
     
     @property
     def latest_score(self):
         return max(self.credit_scores, key=lambda s: s.created_at) if self.credit_scores else None
+
+
+class ApplicationStatusHistory(Base):
+    """Immutable audit log for application status changes"""
+    __tablename__ = "application_status_history"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("loan_applications.id", ondelete="CASCADE"), nullable=False)
+    
+    # Status Change Information
+    from_status = Column(SQLEnum(ApplicationStatus), nullable=True)  # NULL for initial status
+    to_status = Column(SQLEnum(ApplicationStatus), nullable=False)
+    reason = Column(Text)  # Required for rejections and cancellations
+    notes = Column(Text)   # Additional admin notes
+    
+    # Change Context
+    changed_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    change_type = Column(String(20), nullable=False)  # system, user_action, admin_action
+    
+    # System Information
+    ip_address = Column(String(45))  # IPv6 compatible
+    user_agent = Column(Text)
+    
+    # Timestamp (immutable)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    application = relationship("LoanApplication", back_populates="status_history")
+    changed_by = relationship("User")
+    
+    def __repr__(self):
+        return f"<ApplicationStatusHistory(id={self.id}, from={self.from_status}, to={self.to_status})>"
 
 
 class CreditScore(Base):
