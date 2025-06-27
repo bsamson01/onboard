@@ -46,6 +46,57 @@ class ScoringEngine:
         """Initialize the scoring engine"""
         logger.info("Scoring engine initialized")
     
+    def _validate_input_data(self, request: ScoringRequest) -> None:
+        """
+        Validate input data for business logic consistency
+        
+        Args:
+            request: ScoringRequest to validate
+            
+        Raises:
+            ValueError: If data is inconsistent
+        """
+        # Validate employment consistency
+        if (request.financial_profile.employment_status == EmploymentStatus.UNEMPLOYED 
+            and request.financial_profile.employment_duration_months > 0):
+            raise ValueError("Unemployed customer cannot have employment duration > 0")
+            
+        # Validate income vs employment status
+        if (request.financial_profile.employment_status == EmploymentStatus.UNEMPLOYED 
+            and request.financial_profile.monthly_income > 2000):
+            raise ValueError("Unemployed customer cannot have high income without explanation")
+            
+        # Validate risk factors consistency with financial data
+        if (request.risk_factors.employment_stability == EmploymentStability.STABLE 
+            and request.financial_profile.employment_duration_months < 12):
+            raise ValueError("Employment cannot be 'stable' with less than 12 months duration")
+            
+        # Validate debt ratio makes sense with loan data
+        if (not request.financial_profile.has_other_loans 
+            and request.risk_factors.debt_to_income_ratio > 0.1):
+            raise ValueError("High debt ratio inconsistent with no existing loans")
+    
+    def _apply_score_bounds(self, raw_score: float) -> int:
+        """
+        Apply bounds checking to score with proper rounding
+        
+        Args:
+            raw_score: Raw calculated score
+            
+        Returns:
+            Bounded integer score
+        """
+        # Handle extreme cases
+        if raw_score < 0:
+            logger.warning(f"Score below minimum bound: {raw_score}, setting to 0")
+            return 0
+        elif raw_score > 1000:
+            logger.warning(f"Score above maximum bound: {raw_score}, setting to 1000") 
+            return 1000
+        else:
+            # Round to nearest integer
+            return int(round(raw_score))
+    
     async def calculate_score(self, request: ScoringRequest) -> ScoringResponse:
         """
         Calculate credit score based on customer data
@@ -57,14 +108,17 @@ class ScoringEngine:
             ScoringResponse with score, grade, eligibility, and recommendations
         """
         try:
+            # Validate input data integrity
+            self._validate_input_data(request)
+            
             # Calculate base score
             base_score = self._calculate_base_score(request)
             
             # Apply income adjustments
             income_adjustment = self._calculate_income_adjustment(request)
             
-            # Calculate final score
-            final_score = min(1000, max(0, base_score + income_adjustment))
+            # Calculate final score with bounds checking
+            final_score = self._apply_score_bounds(base_score + income_adjustment)
             
             # Determine grade and eligibility
             grade = self._determine_grade(final_score)
@@ -84,7 +138,8 @@ class ScoringEngine:
             # Generate recommendations
             recommendations = self._generate_recommendations(request, final_score)
             
-            return ScoringResponse(
+            # Validate output data
+            response = ScoringResponse(
                 score=final_score,
                 grade=grade,
                 eligibility=eligibility,
@@ -93,8 +148,14 @@ class ScoringEngine:
                 recommendations=recommendations
             )
             
+            logger.info(f"Score calculated successfully: {final_score} ({grade}) for request {request.request_metadata.request_id}")
+            return response
+            
+        except ValueError as e:
+            logger.warning(f"Validation error for request {request.request_metadata.request_id}: {str(e)}")
+            raise e
         except Exception as e:
-            logger.error(f"Error calculating score: {str(e)}")
+            logger.error(f"Unexpected error calculating score for request {request.request_metadata.request_id}: {str(e)}")
             # Return fallback response
             return self._create_fallback_response(request)
     
@@ -108,61 +169,119 @@ class ScoringEngine:
         Returns:
             Base score (integer)
         """
-        score = 500  # Starting base score
-        
-        # Age factor (optimal range 25-55)
-        age = request.customer_profile.age
+        try:
+            score = 500  # Starting base score
+            
+            # Age factor (optimal range 25-55)
+            age = request.customer_profile.age
+            age_adjustment = self._calculate_age_factor(age)
+            score += age_adjustment
+            
+            # Employment status factor
+            employment_adjustment = self._calculate_employment_factor(request.financial_profile)
+            score += employment_adjustment
+            
+            # Banking relationship factor
+            banking_adjustment = self._calculate_banking_factor(request.financial_profile)
+            score += banking_adjustment
+            
+            # Existing loans factor
+            loans_adjustment = self._calculate_loans_factor(request.financial_profile)
+            score += loans_adjustment
+            
+            # Risk factors impact
+            risk_adjustment = self._calculate_risk_factor_impact(request.risk_factors)
+            score += risk_adjustment
+            
+            logger.debug(f"Base score breakdown: base=500, age={age_adjustment}, "
+                        f"employment={employment_adjustment}, banking={banking_adjustment}, "
+                        f"loans={loans_adjustment}, risk={risk_adjustment}, total={score}")
+            
+            return max(0, min(1000, score))
+            
+        except Exception as e:
+            logger.error(f"Error in base score calculation: {str(e)}")
+            # Return neutral score on calculation error
+            return 500
+    
+    def _calculate_age_factor(self, age: int) -> int:
+        """Calculate age-based score adjustment"""
         if 25 <= age <= 55:
-            score += 50
+            return 50
         elif 18 <= age < 25 or 55 < age <= 65:
-            score += 25
-        # No adjustment for ages outside these ranges
-        
-        # Employment status factor
-        employment_status = request.financial_profile.employment_status
-        if employment_status == EmploymentStatus.EMPLOYED:
-            score += 100
-        elif employment_status == EmploymentStatus.SELF_EMPLOYED:
-            score += 75
-        elif employment_status == EmploymentStatus.UNEMPLOYED:
-            score -= 100
-        
-        # Employment duration factor
-        duration_months = request.financial_profile.employment_duration_months
-        if duration_months >= 24:
-            score += 75
-        elif duration_months >= 12:
-            score += 50
-        elif duration_months >= 6:
-            score += 25
-        # Penalty for very short employment
-        elif duration_months < 3:
-            score -= 50
-        
-        # Banking relationship factor
-        if request.financial_profile.has_bank_account:
-            score += 50
-            if request.financial_profile.bank_account_type in ["checking", "both"]:
-                score += 25
-        
-        # Existing loans factor
-        if request.financial_profile.has_other_loans:
-            # Penalty based on number of loans
-            loan_count = request.financial_profile.other_loans_count
-            if loan_count == 1:
-                score -= 25
-            elif loan_count == 2:
-                score -= 50
-            elif loan_count >= 3:
-                score -= 100
+            return 25
+        elif 65 < age <= 75:
+            return 0
         else:
-            # Bonus for no existing loans
-            score += 25
+            return -25  # Very young (impossible due to validation) or very old
+    
+    def _calculate_employment_factor(self, financial_profile) -> int:
+        """Calculate employment-based score adjustment"""
+        employment_status = financial_profile.employment_status
+        duration_months = financial_profile.employment_duration_months
         
-        # Risk factors impact
-        score += self._calculate_risk_factor_impact(request.risk_factors)
+        base_employment_score = 0
         
-        return max(0, min(1000, score))
+        # Base employment status scoring
+        if employment_status == EmploymentStatus.EMPLOYED:
+            base_employment_score = 100
+        elif employment_status == EmploymentStatus.SELF_EMPLOYED:
+            base_employment_score = 75
+        elif employment_status == EmploymentStatus.STUDENT:
+            base_employment_score = -25
+        elif employment_status == EmploymentStatus.RETIRED:
+            base_employment_score = 25
+        elif employment_status == EmploymentStatus.UNEMPLOYED:
+            base_employment_score = -150
+        
+        # Duration-based adjustment (only for employed/self-employed)
+        duration_adjustment = 0
+        if employment_status in [EmploymentStatus.EMPLOYED, EmploymentStatus.SELF_EMPLOYED]:
+            if duration_months >= 24:
+                duration_adjustment = 75
+            elif duration_months >= 12:
+                duration_adjustment = 50
+            elif duration_months >= 6:
+                duration_adjustment = 25
+            elif duration_months >= 3:
+                duration_adjustment = 0
+            else:
+                duration_adjustment = -50
+                
+        return base_employment_score + duration_adjustment
+    
+    def _calculate_banking_factor(self, financial_profile) -> int:
+        """Calculate banking relationship score adjustment"""
+        if not financial_profile.has_bank_account:
+            return -25  # Penalty for no banking relationship
+            
+        base_score = 50
+        
+        # Additional bonus for checking account
+        if financial_profile.bank_account_type in ["checking", "both"]:
+            base_score += 25
+            
+        return base_score
+    
+    def _calculate_loans_factor(self, financial_profile) -> int:
+        """Calculate existing loans score adjustment"""
+        if not financial_profile.has_other_loans:
+            return 25  # Bonus for no existing loans
+            
+        loan_count = financial_profile.other_loans_count
+        loan_amount = financial_profile.total_other_loans_amount
+        
+        # Base penalty for having loans
+        count_penalty = min(loan_count * 25, 100)  # Cap at -100
+        
+        # Additional penalty for high loan amounts
+        amount_penalty = 0
+        if loan_amount > 100000:  # Very high debt
+            amount_penalty = 50
+        elif loan_amount > 50000:  # High debt
+            amount_penalty = 25
+            
+        return -(count_penalty + amount_penalty)
     
     def _calculate_income_adjustment(self, request: ScoringRequest) -> int:
         """
@@ -299,51 +418,101 @@ class ScoringEngine:
         Returns:
             List of recommendation strings
         """
-        recommendations = []
-        
-        # Income-based recommendations
-        monthly_income = request.financial_profile.monthly_income
-        if monthly_income < 3000:
-            recommendations.append("Consider documenting additional income sources")
-            recommendations.append("Explore opportunities to increase monthly income")
-        
-        # Employment-based recommendations
-        duration_months = request.financial_profile.employment_duration_months
-        if duration_months < 12:
-            recommendations.append("Maintain consistent employment history")
-            recommendations.append("Consider waiting until you have 12+ months employment history")
-        
-        # Banking recommendations
-        if not request.financial_profile.has_bank_account:
-            recommendations.append("Establish a banking relationship with a checking account")
-        
-        # Debt management recommendations
-        debt_ratio = request.risk_factors.debt_to_income_ratio
-        if debt_ratio > 0.3:
-            recommendations.append("Work on reducing existing debt obligations")
-            recommendations.append("Consider debt consolidation options")
-        
-        # Risk factor recommendations
-        if request.risk_factors.income_stability == IncomeStability.LOW:
-            recommendations.append("Focus on stabilizing your income source")
-        
-        if request.risk_factors.employment_stability == EmploymentStability.UNSTABLE:
-            recommendations.append("Build a more stable employment history")
-        
-        # Score-specific recommendations
-        if score < 600:
-            recommendations.append("Focus on improving employment stability and reducing debt")
-            recommendations.append("Consider applying with a co-signer")
-        elif score < 700:
-            recommendations.append("Continue building positive financial history")
-            recommendations.append("Consider providing additional income documentation")
-        else:
-            recommendations.append("Maintain your excellent financial profile")
-            recommendations.append("You qualify for our best loan products")
-        
-        # Remove duplicates and limit to reasonable number
-        recommendations = list(dict.fromkeys(recommendations))
-        return recommendations[:5]  # Limit to 5 recommendations
+        try:
+            recommendations = []
+            priority_recommendations = []
+            secondary_recommendations = []
+            
+            # Critical issues (high priority)
+            if not request.financial_profile.has_bank_account:
+                priority_recommendations.append("Establish a banking relationship with a checking account")
+            
+            if request.financial_profile.employment_status == EmploymentStatus.UNEMPLOYED:
+                priority_recommendations.append("Secure stable employment to improve creditworthiness")
+            
+            if request.risk_factors.debt_to_income_ratio > 0.5:
+                priority_recommendations.append("Urgent: Reduce debt obligations to improve debt-to-income ratio")
+            
+            # Employment-based recommendations
+            duration_months = request.financial_profile.employment_duration_months
+            if duration_months < 6 and request.financial_profile.employment_status != EmploymentStatus.UNEMPLOYED:
+                priority_recommendations.append("Build employment history - maintain current position for at least 6 months")
+            elif duration_months < 12:
+                secondary_recommendations.append("Continue building employment history (aim for 12+ months)")
+            
+            # Income-based recommendations
+            monthly_income = request.financial_profile.monthly_income
+            if monthly_income < 2000:
+                priority_recommendations.append("Increase monthly income through additional income sources")
+            elif monthly_income < 3000:
+                secondary_recommendations.append("Consider documenting additional income sources")
+            
+            # Debt management recommendations
+            debt_ratio = request.risk_factors.debt_to_income_ratio
+            if 0.3 < debt_ratio <= 0.5:
+                secondary_recommendations.append("Work on reducing existing debt obligations")
+            elif debt_ratio > 0.1 and not request.financial_profile.has_other_loans:
+                secondary_recommendations.append("Verify debt calculations - ensure accuracy")
+            
+            # Banking improvements
+            if (request.financial_profile.has_bank_account and 
+                request.financial_profile.bank_account_type not in ["checking", "both"]):
+                secondary_recommendations.append("Consider opening a checking account for improved credit profile")
+            
+            # Risk factor recommendations
+            if request.risk_factors.income_stability == IncomeStability.LOW:
+                secondary_recommendations.append("Focus on stabilizing your primary income source")
+            
+            if request.risk_factors.employment_stability == EmploymentStability.UNSTABLE:
+                secondary_recommendations.append("Demonstrate employment stability through consistent work history")
+            
+            # Score-specific recommendations
+            if score < 500:
+                priority_recommendations.append("Consider working with a financial counselor")
+                priority_recommendations.append("Focus on fundamental financial stability before applying")
+            elif score < 600:
+                secondary_recommendations.append("Consider applying with a co-signer or collateral")
+            elif score < 700:
+                secondary_recommendations.append("Continue building positive financial history")
+            elif score < 800:
+                secondary_recommendations.append("You're close to premium rates - maintain current trajectory")
+            else:
+                secondary_recommendations.append("Excellent profile! You qualify for our best terms")
+            
+            # Loan-specific recommendations
+            if request.financial_profile.has_other_loans:
+                loan_count = request.financial_profile.other_loans_count
+                if loan_count > 3:
+                    priority_recommendations.append("Consider debt consolidation to reduce number of active loans")
+                elif loan_count > 1:
+                    secondary_recommendations.append("Monitor loan obligations to maintain good payment history")
+            
+            # Combine recommendations with priority order
+            final_recommendations = priority_recommendations + secondary_recommendations
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_recommendations = []
+            for rec in final_recommendations:
+                if rec not in seen:
+                    seen.add(rec)
+                    unique_recommendations.append(rec)
+            
+            # Ensure we always return at least one recommendation
+            if not unique_recommendations:
+                unique_recommendations.append("Continue maintaining your current financial profile")
+            
+            # Limit to maximum 6 recommendations, prioritizing the most important
+            return unique_recommendations[:6]
+            
+        except Exception as e:
+            logger.error(f"Error generating recommendations: {str(e)}")
+            # Fallback recommendations
+            return [
+                "Continue building a positive financial history",
+                "Maintain stable employment and income",
+                "Consider consulting with a financial advisor"
+            ]
     
     def _create_fallback_response(self, request: ScoringRequest) -> ScoringResponse:
         """

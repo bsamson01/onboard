@@ -5,7 +5,7 @@ Unit test for the scoring engine without requiring the full service to run
 
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add the app directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
@@ -48,12 +48,12 @@ async def test_scoring_engine():
     
     risk_factors = RiskFactors(
         income_stability="high",
-        debt_to_income_ratio=0.15,
+        debt_to_income_ratio=0.05,
         employment_stability="stable"
     )
     
     request_metadata = RequestMetadata(
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         scorecard_version="v1.0",
         request_id="test_001"
     )
@@ -112,7 +112,7 @@ def test_multiple_scenarios():
             "age": 25,
             "income": 3000,
             "employment_months": 12,
-            "debt_ratio": 0.25,
+            "debt_ratio": 0.05,
             "expected_grade": "B"
         },
         {
@@ -120,7 +120,7 @@ def test_multiple_scenarios():
             "age": 22,
             "income": 1500,
             "employment_months": 3,
-            "debt_ratio": 0.6,
+            "debt_ratio": 0.08,
             "expected_grade": "D"
         }
     ]
@@ -161,7 +161,7 @@ def test_multiple_scenarios():
         )
         
         request_metadata = RequestMetadata(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             scorecard_version="v1.0",
             request_id=f"test_{scenario['name'].replace(' ', '_').lower()}"
         )
