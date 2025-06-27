@@ -8,7 +8,7 @@ import uuid
 
 from app.database import get_async_db
 from app.models.user import User
-from app.models.loan import LoanApplication, CreditScore, LoanDecision, ApplicationStatus
+from app.models.loan import LoanApplication, CreditScore, LoanApplicationStatus, LoanDecision, ApplicationStatus
 from app.models.onboarding import Customer, OnboardingApplication, OnboardingStatus
 from app.schemas.loan import (
     LoanApplicationCreate, LoanApplicationResponse, LoanApplicationUpdate, 
@@ -87,7 +87,6 @@ async def get_loan_application_for_user(
 ) -> LoanApplication:
     """Get loan application that belongs to the current user"""
     customer = await get_customer_for_user(user, session)
-    print(f"DEBUG: application_id={application_id}, user_id={user.id}, customer_id={customer.id}")
     # Normalize UUID for SQLite (remove dashes)
     stmt = select(LoanApplication).options(
         selectinload(LoanApplication.credit_scores),
@@ -102,7 +101,6 @@ async def get_loan_application_for_user(
     result = await session.execute(stmt)
     application = result.scalar()
     if not application:
-        print(f"DEBUG: No application found for application_id={application_id} and customer_id={customer.id}")
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Loan application not found."
@@ -120,17 +118,35 @@ async def check_loan_eligibility(
     try:
         customer = await get_customer_for_user(current_user, session)
         await verify_onboarding_complete(customer, session)
+
         if application_id:
             application = await get_loan_application_for_user(application_id, current_user, session)
-            await check_active_loan_applications(customer, session, exclude_application_id=application_id)
-            # Allow update if not in a terminal state
+            # Only check for active applications if the current one is editable
             editable_statuses = [
-                ApplicationStatus.IN_PROGRESS,
-                ApplicationStatus.SUBMITTED,
-                ApplicationStatus.UNDER_REVIEW,
-                ApplicationStatus.AWAITING_DISBURSEMENT
+                LoanApplicationStatus.IN_PROGRESS,
+                LoanApplicationStatus.SUBMITTED,
+                LoanApplicationStatus.UNDER_REVIEW,
+                LoanApplicationStatus.AWAITING_DISBURSEMENT,
+                LoanApplicationStatus.APPROVED,
+                LoanApplicationStatus.REJECTED,
+                LoanApplicationStatus.CANCELLED,
+                LoanApplicationStatus.COMPLETED,
+                LoanApplicationStatus.DONE
             ]
-            if application.status not in editable_statuses:
+
+
+            if application.status in editable_statuses:
+                await check_active_loan_applications(customer, session, exclude_application_id=application_id)
+                # Eligible for editing/continuing
+                return LoanEligibilityCheckResponse(
+                    is_eligible=True,
+                    eligibility_reasons=["Application is in a modifiable state."],
+                    max_loan_amount=50000,  # Example default
+                    recommended_loan_types=["personal", "business", "emergency"],
+                    requirements=[]
+                )
+            else:
+                # Not eligible for editing, but allow viewing
                 return LoanEligibilityCheckResponse(
                     is_eligible=False,
                     eligibility_reasons=[f"Application is not in a modifiable state: {application.status.value}"],
@@ -139,22 +155,21 @@ async def check_loan_eligibility(
                     requirements=["Application must not be cancelled, rejected, or completed to update"]
                 )
         else:
+            # New application: check for active applications
             await check_active_loan_applications(customer, session)
-        # Basic eligibility check
-        eligibility_reasons = ["Onboarding completed", "No active loan applications"]
-        is_eligible = True
-        max_loan_amount = 50000  # Basic default
-        recommended_loan_types = ["personal", "business", "emergency"]
-        requirements = []
-        return LoanEligibilityCheckResponse(
-            is_eligible=is_eligible,
-            eligibility_reasons=eligibility_reasons,
-            max_loan_amount=max_loan_amount,
-            recommended_loan_types=recommended_loan_types,
-            requirements=requirements
-        )
+            eligibility_reasons = ["Onboarding completed", "No active loan applications"]
+            is_eligible = True
+            max_loan_amount = 50000  # Basic default
+            recommended_loan_types = ["personal", "business", "emergency"]
+            requirements = []
+            return LoanEligibilityCheckResponse(
+                is_eligible=is_eligible,
+                eligibility_reasons=eligibility_reasons,
+                max_loan_amount=max_loan_amount,
+                recommended_loan_types=recommended_loan_types,
+                requirements=requirements
+            )
     except HTTPException as exc:
-        print('HTTPException', exc.detail)
         return LoanEligibilityCheckResponse(
             is_eligible=False,
             eligibility_reasons=[str(exc.detail)],
@@ -291,7 +306,6 @@ async def get_loan_application(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_db)
 ):
-    print('get_loan_application', application_id)
     """Get a specific loan application"""
     application = await get_loan_application_for_user(application_id, current_user, session)
     # Prepare nested fields and computed properties as in the list endpoint
@@ -593,3 +607,45 @@ async def create_loan_decision(
     await session.refresh(decision)
     
     return decision
+
+
+@router.get("/admin/applications/{application_id}", response_model=LoanApplicationResponse)
+async def get_admin_loan_application(
+    application_id: uuid.UUID,
+    current_user: User = Depends(require_staff),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Get a specific loan application (admin/staff only) - no customer ID validation"""
+    # Normalize UUID for SQLite (remove dashes)
+    stmt = select(LoanApplication).options(
+        selectinload(LoanApplication.credit_scores),
+        selectinload(LoanApplication.decisions),
+        selectinload(LoanApplication.customer)
+    ).where(
+        func.replace(LoanApplication.id, '-', '') == application_id.hex
+    )
+    result = await session.execute(stmt)
+    application = result.scalar()
+    if not application:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Loan application not found."
+        )
+    
+    # Prepare nested fields and computed properties
+    def get_latest(items, date_attr):
+        return max(items, key=lambda x: getattr(x, date_attr)) if items else None
+    
+    latest_score = get_latest(application.credit_scores, 'scored_at')
+    latest_decision = get_latest(application.decisions, 'decision_date')
+    app_dict = application.__dict__.copy()
+    app_dict['latest_credit_score'] = CreditScoreResponse.model_validate(latest_score) if latest_score else None
+    app_dict['latest_decision'] = LoanDecisionResponse.model_validate(latest_decision) if latest_decision else None
+    app_dict['is_approved'] = application.is_approved
+    app_dict['is_rejected'] = application.is_rejected
+    app_dict['is_cancelled'] = application.is_cancelled
+    app_dict['is_active'] = application.is_active
+    app_dict['is_completed'] = application.is_completed
+    app_dict['can_be_cancelled_by_customer'] = application.can_be_cancelled_by_customer
+    
+    return LoanApplicationResponse.model_validate(app_dict)

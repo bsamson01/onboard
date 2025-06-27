@@ -21,14 +21,18 @@ class ApplicationStatus(str, Enum):
 class LoanApplicationStatus(str, Enum):
     """Legacy enum - kept for backward compatibility"""
     DRAFT = "draft"
+    IN_PROGRESS = "in_progress"
     SUBMITTED = "submitted"
     UNDER_REVIEW = "under_review"
     APPROVED = "approved"
     REJECTED = "rejected"
+    AWAITING_DISBURSEMENT = "awaiting_disbursement"
     DISBURSED = "disbursed"
     ACTIVE = "active"
     DEFAULTED = "defaulted"
     COMPLETED = "completed"
+    CANCELLED = "cancelled" 
+    DONE = "done"
 
 
 class CreditBand(str, Enum):
