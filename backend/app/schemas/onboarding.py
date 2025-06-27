@@ -158,6 +158,19 @@ class OnboardingApplicationResponse(BaseModel):
     updated_at: datetime
     submitted_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    # Additional fields for full application info
+    customer_id: Optional[uuid.UUID] = None
+    review_notes: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    decision_made_by_id: Optional[uuid.UUID] = None
+    decision_date: Optional[datetime] = None
+    assigned_officer_id: Optional[uuid.UUID] = None
+    cancellation_reason: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
+    reviewed_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    rejected_at: Optional[datetime] = None
+    # Add any other fields from the OnboardingApplication model as needed
 
     class Config:
         from_attributes = True

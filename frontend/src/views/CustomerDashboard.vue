@@ -1,20 +1,5 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <header class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center h-16">
-          <div class="flex items-center">
-            <h1 class="text-xl font-semibold text-gray-900">Customer Dashboard</h1>
-          </div>
-          <div class="flex items-center space-x-4">
-            <span class="text-sm text-gray-700">Welcome, {{ authStore.user?.first_name }}!</span>
-            <button @click="handleLogout" class="btn-secondary">Logout</button>
-          </div>
-        </div>
-      </div>
-    </header>
-
     <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
       <!-- Welcome Section -->
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-8">
@@ -43,7 +28,7 @@
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-xl p-6 mb-8">
+      <div v-if="!isLoading && error" class="bg-red-50 border border-red-200 rounded-xl p-6 mb-8">
         <div class="flex">
           <div class="flex-shrink-0">
             <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
@@ -51,14 +36,13 @@
             </svg>
           </div>
           <div class="ml-3">
-            <h3 class="text-sm font-medium text-red-800">Error</h3>
-            <p class="mt-1 text-sm text-red-700">{{ error }}</p>
+            <p class="text-sm text-red-700">{{ error }}</p>
           </div>
         </div>
       </div>
 
       <!-- Applications Section -->
-      <div v-else>
+      <div v-if="!isLoading">
         <h3 class="text-lg font-semibold text-gray-900 mb-4">Your Applications</h3>
         
         <!-- Active Applications -->
@@ -243,7 +227,7 @@ const startNewApplication = async () => {
     router.push(`/onboarding?app=${response.data.id}`)
   } catch (err) {
     console.error('Failed to create application:', err)
-    error.value = 'Failed to create new application. Please try again.'
+    error.value = err.response.data.detail || 'Failed to create new application. Please try again.'
   }
 }
 

@@ -107,7 +107,7 @@ class StatusUpdateResponse(BaseModel):
     """Response schema for status update operation"""
     success: bool
     application: ApplicationStatusResponse
-    status_history_entry: StatusHistoryResponse
+    status_history_entry: Optional[StatusHistoryResponse] = None
     message: str
 
 

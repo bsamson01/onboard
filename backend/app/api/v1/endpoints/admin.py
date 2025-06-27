@@ -9,13 +9,13 @@ import logging
 
 from app.database import get_async_db
 from app.models.user import User
-from app.core.auth import require_admin, require_loan_officer
+from app.core.auth import require_admin, require_loan_officer, require_staff
 from app.config import settings
 from app.services.scorecard_service import ScorecardService
 from app.services.audit_service import AuditService
 from app.core.logging import log_audit_event, AuditEvent
 from pydantic import BaseModel, HttpUrl
-from app.models.onboarding import OnboardingApplication, OnboardingStatus
+from app.models.onboarding import OnboardingApplication, OnboardingStatus, OnboardingStep
 from app.models.loan import ApplicationStatus
 from app.services.status_service import StatusService
 
@@ -490,7 +490,7 @@ async def unlock_application_for_editing(
 
 @router.get("/staff/dashboard")
 async def get_staff_dashboard(
-    current_user: User = Depends(require_loan_officer),
+    current_user: User = Depends(require_staff),
     session: AsyncSession = Depends(get_async_db)
 ):
     """Get staff dashboard data (loan officer, risk officer, admin)."""
@@ -510,6 +510,64 @@ async def get_staff_dashboard(
         )
 
 
+@router.get("/staff/activities")
+async def get_staff_activities(
+    limit: int = 10,
+    offset: int = 0,
+    current_user: User = Depends(require_staff),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Get all staff activities, paginated."""
+    from app.models.user import AuditLog, User
+    from app.models.onboarding import OnboardingApplication, OnboardingStep
+    stmt = select(AuditLog).order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit)
+    result = await session.execute(stmt)
+    activities = result.scalars().all()
+    activity_list = []
+    for activity in activities:
+        user_display = None
+        if activity.user_id:
+            user = await session.get(User, activity.user_id)
+            if user:
+                user_display = f"{user.first_name} {user.last_name}".strip() or str(user.id)
+            else:
+                user_display = str(activity.user_id)
+        application_number = None
+        resource_info = ""
+        if activity.resource_type == "onboarding_application":
+            app = await session.get(OnboardingApplication, activity.resource_id)
+            if app:
+                application_number = app.application_number
+                resource_info = f"(App #{app.application_number})"
+        elif activity.resource_type == "onboarding_step":
+            step = await session.get(OnboardingStep, activity.resource_id)
+            if step:
+                app = await session.get(OnboardingApplication, step.application_id)
+                if app:
+                    application_number = app.application_number
+                    resource_info = f"(Step {step.step_number}: {step.step_name}, App #{app.application_number})"
+                else:
+                    resource_info = f"(Step {step.step_number}: {step.step_name})"
+        action_labels = {
+            "onboarding_application_created": "Application Created",
+            "onboarding_application_submitted": "Application Submitted",
+            "onboarding_step_completed": "Step Completed",
+            "document_uploaded": "Document Uploaded",
+            "document_ocr_processed": "Document OCR Processed",
+            "credit_score_calculated": "Credit Score Calculated",
+        }
+        label = action_labels.get(activity.action, activity.action.replace('_', ' ').title())
+        description = f"{label} {resource_info}".strip()
+        activity_list.append({
+            "label": label,
+            "description": description,
+            "timestamp": activity.timestamp.isoformat(),
+            "user_display": user_display,
+            "application_number": application_number
+        })
+    return {"activities": activity_list, "limit": limit, "offset": offset}
+
+
 # Helper functions
 async def _get_user_count(session: AsyncSession) -> int:
     """Get total user count."""
@@ -523,33 +581,63 @@ async def _get_user_count(session: AsyncSession) -> int:
 async def _get_active_applications_count(session: AsyncSession) -> int:
     """Get active applications count."""
     try:
-        result = await session.execute(text("SELECT COUNT(*) FROM onboarding_applications WHERE status IN ('draft', 'in_progress', 'under_review')"))
+        result = await session.execute(text("SELECT COUNT(*) FROM onboarding_applications WHERE UPPER(status) IN ('DRAFT', 'IN_PROGRESS', 'UNDER_REVIEW')"))
         return result.scalar() or 0
     except:
         return 0
 
 
 async def _get_recent_activities(session: AsyncSession) -> List[Dict[str, Any]]:
-    """Get recent system activities."""
+    """Get recent system activities with readable labels, user info, and application number."""
     try:
-        from app.models.user import AuditLog
-        
-        stmt = select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(10)
+        from app.models.user import AuditLog, User
+        from app.models.onboarding import OnboardingApplication, OnboardingStep
+        stmt = select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(3)
         result = await session.execute(stmt)
         activities = result.scalars().all()
-        
         activity_list = []
         for activity in activities:
-            activity_data = {
-                "action": activity.action,
-                "resource_type": activity.resource_type,
-                "timestamp": activity.timestamp.isoformat(),
-                "user_id": str(activity.user_id) if activity.user_id else None
+            user_display = None
+            if activity.user_id:
+                user = await session.get(User, activity.user_id)
+                if user:
+                    user_display = f"{user.first_name} {user.last_name}".strip() or str(user.id)
+                else:
+                    user_display = str(activity.user_id)
+            application_number = None
+            resource_info = ""
+            if activity.resource_type == "onboarding_application":
+                app = await session.get(OnboardingApplication, activity.resource_id)
+                if app:
+                    application_number = app.application_number
+                    resource_info = f"(App #{app.application_number})"
+            elif activity.resource_type == "onboarding_step":
+                step = await session.get(OnboardingStep, activity.resource_id)
+                if step:
+                    app = await session.get(OnboardingApplication, step.application_id)
+                    if app:
+                        application_number = app.application_number
+                        resource_info = f"(Step {step.step_number}: {step.step_name}, App #{app.application_number})"
+                    else:
+                        resource_info = f"(Step {step.step_number}: {step.step_name})"
+            action_labels = {
+                "onboarding_application_created": "Application Created",
+                "onboarding_application_submitted": "Application Submitted",
+                "onboarding_step_completed": "Step Completed",
+                "document_uploaded": "Document Uploaded",
+                "document_ocr_processed": "Document OCR Processed",
+                "credit_score_calculated": "Credit Score Calculated",
             }
-            activity_list.append(activity_data)
-        
+            label = action_labels.get(activity.action, activity.action.replace('_', ' ').title())
+            description = f"{label} {resource_info}".strip()
+            activity_list.append({
+                "label": label,
+                "description": description,
+                "timestamp": activity.timestamp.isoformat(),
+                "user_display": user_display,
+                "application_number": application_number
+            })
         return activity_list
-        
     except Exception as e:
         logger.warning(f"Failed to get recent activities: {str(e)}")
         return []

@@ -7,6 +7,7 @@ import CustomerDashboard from '@/views/CustomerDashboard.vue'
 import AdminDashboard from '@/views/AdminDashboard.vue'
 import ApplicationReviewPanel from '@/components/admin/ApplicationReviewPanel.vue'
 import StaffDashboard from '@/views/StaffDashboard.vue'
+import ActivitiesPage from '@/views/ActivitiesPage.vue'
 
 const routes = [
   {
@@ -47,6 +48,12 @@ const routes = [
     path: '/staff',
     name: 'StaffDashboard',
     component: StaffDashboard,
+    meta: { requiresAuth: true, roles: ['admin', 'loan_officer', 'risk_officer'] }
+  },
+  {
+    path: '/staff/activities',
+    name: 'StaffActivities',
+    component: ActivitiesPage,
     meta: { requiresAuth: true, roles: ['admin', 'loan_officer', 'risk_officer'] }
   }
 ]

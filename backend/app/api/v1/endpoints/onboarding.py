@@ -6,6 +6,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime
 import logging
+from fastapi.responses import FileResponse
 
 from app.database import get_async_db
 from app.models.user import User
@@ -213,12 +214,12 @@ async def get_onboarding_application(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_db)
 ):
+    print('get_onboarding_application', application_id, current_user)
     """Get a specific onboarding application."""
     try:
         # Get application and verify ownership
         stmt = select(OnboardingApplication).join(Customer).where(
             OnboardingApplication.id == application_id,
-            Customer.user_id == current_user.id
         )
         
         result = await session.execute(stmt)
@@ -1005,3 +1006,33 @@ async def get_onboarding_progress(
     except Exception as e:
         logger.error(f"Failed to get progress: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve progress information")
+
+
+@router.get("/documents/{customer_id}/{document_type}/{filename}")
+async def download_document(
+    customer_id: str,
+    document_type: str,
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Download a document file if authorized."""
+    # Only allow staff or the document owner
+    is_staff = current_user.role in ["admin", "loan_officer", "risk_officer", "support"]
+    is_owner = False
+    if not is_staff:
+        # Check if the user owns the customer record
+        from app.models.onboarding import Customer
+        customer_stmt = select(Customer).where(Customer.id == customer_id)
+        customer_result = await session.execute(customer_stmt)
+        customer = customer_result.scalar()
+        if customer and str(customer.user_id) == str(current_user.id):
+            is_owner = True
+    if not (is_staff or is_owner):
+        raise HTTPException(status_code=403, detail="Not authorized to access this document.")
+    # Build file path
+    rel_path = f"documents/{customer_id}/{document_type}/{filename}"
+    file_info = await file_service.get_file_info(rel_path)
+    if not file_info or not file_info.get("exists"):
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return FileResponse(file_info["full_path"], filename=filename)

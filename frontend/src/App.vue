@@ -6,15 +6,26 @@
         <p class="mt-4 text-sm text-gray-600">Loading...</p>
       </div>
     </div>
-    <router-view v-else />
+    <template v-else>
+      <Header @logout="handleLogout" />
+      <router-view />
+    </template>
   </div>
 </template>
 
 <script setup>
 import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useRouter } from 'vue-router'
+import Header from '@/components/Header.vue'
 
 const authStore = useAuthStore()
+const router = useRouter()
+
+function handleLogout() {
+  authStore.logout()
+  router.push('/login')
+}
 
 // onMounted(() => {
 //   // Check for existing token on app load
