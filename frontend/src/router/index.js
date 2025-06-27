@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 import Home from '@/views/Home.vue'
 import Login from '@/views/Login.vue'
 import OnboardingWizard from '@/views/OnboardingWizard.vue'
+import LoanApplicationWizard from '@/views/LoanApplicationWizard.vue'
 import CustomerDashboard from '@/views/CustomerDashboard.vue'
 import AdminDashboard from '@/views/AdminDashboard.vue'
 import ApplicationReviewPanel from '@/components/admin/ApplicationReviewPanel.vue'
@@ -42,6 +43,12 @@ const routes = [
     path: '/onboarding',
     name: 'OnboardingWizard',
     component: OnboardingWizard,
+    meta: { requiresAuth: true, roles: ['customer'] }
+  },
+  {
+    path: '/loan-application',
+    name: 'LoanApplicationWizard',
+    component: LoanApplicationWizard,
     meta: { requiresAuth: true, roles: ['customer'] }
   },
   {
