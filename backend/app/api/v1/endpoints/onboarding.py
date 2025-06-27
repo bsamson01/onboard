@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 import logging
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import selectinload
 
 from app.database import get_async_db
 from app.models.user import User
@@ -25,6 +26,7 @@ from app.services.ocr_service import OCRService
 from app.services.scorecard_service import ScorecardService
 from app.services.file_service import FileService
 from app.services.audit_service import AuditService
+from app.services.pdf_service import PDFService
 from app.core.auth import get_current_user
 
 router = APIRouter()
@@ -36,6 +38,7 @@ ocr_service = OCRService()
 scorecard_service = ScorecardService()
 file_service = FileService()
 audit_service = AuditService()
+pdf_service = PDFService()
 
 # Step configurations
 ONBOARDING_STEPS = {
@@ -1036,3 +1039,181 @@ async def download_document(
     if not file_info or not file_info.get("exists"):
         raise HTTPException(status_code=404, detail="Document not found.")
     return FileResponse(file_info["full_path"], filename=filename)
+
+
+@router.get("/applications/{application_id}/download-pdf")
+async def download_application_pdf(
+    application_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Generate and download a PDF report for a completed onboarding application."""
+    try:
+        # Get application and verify ownership, eagerly load relationships
+        app_stmt = (
+            select(OnboardingApplication)
+            .options(
+                selectinload(OnboardingApplication.assigned_officer),
+                selectinload(OnboardingApplication.decision_made_by)
+            )
+            .join(Customer)
+            .where(
+                OnboardingApplication.id == application_id,
+                Customer.user_id == current_user.id
+            )
+        )
+        app_result = await session.execute(app_stmt)
+        application = app_result.scalar()
+        
+        if not application:
+            raise HTTPException(status_code=404, detail="Onboarding application not found")
+        
+        # Check if application is completed (approved, rejected, or completed)
+        if application.status not in [OnboardingStatus.APPROVED, OnboardingStatus.REJECTED, OnboardingStatus.COMPLETED]:
+            raise HTTPException(
+                status_code=400, 
+                detail="PDF download is only available for completed applications"
+            )
+        
+        # Get customer information
+        customer_stmt = select(Customer).where(Customer.id == application.customer_id)
+        customer_result = await session.execute(customer_stmt)
+        customer = customer_result.scalar()
+        
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer information not found")
+        
+        # Get all steps data
+        steps_stmt = select(OnboardingStep).where(OnboardingStep.application_id == application_id)
+        steps_result = await session.execute(steps_stmt)
+        steps = steps_result.scalars().all()
+        
+        # Get documents
+        documents_stmt = select(Document).where(Document.customer_id == customer.id)
+        documents_result = await session.execute(documents_stmt)
+        documents = documents_result.scalars().all()
+        
+        # Prepare application data for PDF
+        application_data = {
+            'id': str(application.id),
+            'application_number': application.application_number,
+            'status': application.status.value,
+            'current_step': application.current_step,
+            'total_steps': application.total_steps,
+            'progress_percentage': application.progress_percentage,
+            'created_at': application.created_at,
+            'updated_at': application.updated_at,
+            'submitted_at': application.submitted_at,
+            'completed_at': application.completed_at,
+            'review_notes': application.review_notes,
+            'rejection_reason': application.rejection_reason,
+            'decision_date': application.decision_date,
+            'reviewed_at': application.reviewed_at,
+            'approved_at': application.approved_at,
+            'rejected_at': application.rejected_at,
+            'documents': [
+                {
+                    'document_type': doc.document_type.value,
+                    'document_name': doc.document_name,
+                    'status': doc.status.value,
+                    'uploaded_at': doc.uploaded_at
+                } for doc in documents
+            ]
+        }
+        
+        # Add eligibility result if available
+        if application.score_breakdown:
+            application_data['eligibility_result'] = {
+                'score': application.score_breakdown.get('score'),
+                'grade': application.score_breakdown.get('grade'),
+                'eligibility': application.eligibility_result,
+                'message': application.score_breakdown.get('message', ''),
+                'recommendations': application.score_breakdown.get('recommendations', [])
+            }
+        
+        # Add review information
+        if application.assigned_officer:
+            application_data['assigned_officer_name'] = f"{application.assigned_officer.first_name} {application.assigned_officer.last_name}"
+        
+        if application.decision_made_by:
+            application_data['decision_made_by_name'] = f"{application.decision_made_by.first_name} {application.decision_made_by.last_name}"
+        
+        # Prepare customer data
+        customer_data = {
+            'id': str(customer.id),
+            'customer_number': customer.customer_number,
+            'user_id': str(customer.user_id),
+            'date_of_birth': customer.date_of_birth,
+            'gender': customer.gender,
+            'marital_status': customer.marital_status,
+            'nationality': customer.nationality,
+            'id_number': customer.id_number,
+            'id_type': customer.id_type,
+            'address_line1': customer.address_line1,
+            'address_line2': customer.address_line2,
+            'city': customer.city,
+            'state_province': customer.state_province,
+            'postal_code': customer.postal_code,
+            'country': customer.country,
+            'emergency_contact_name': customer.emergency_contact_name,
+            'emergency_contact_phone': customer.emergency_contact_phone,
+            'emergency_contact_relationship': customer.emergency_contact_relationship,
+            'employment_status': customer.employment_status,
+            'employer_name': customer.employer_name,
+            'job_title': customer.job_title,
+            'monthly_income': float(customer.monthly_income) if customer.monthly_income else None,
+            'employment_duration_months': customer.employment_duration_months,
+            'bank_name': customer.bank_name,
+            'bank_account_number': customer.bank_account_number,
+            'bank_account_type': customer.bank_account_type,
+            'has_other_loans': customer.has_other_loans,
+            'other_loans_details': customer.other_loans_details,
+            'consent_data_processing': customer.consent_data_processing,
+            'consent_credit_check': customer.consent_credit_check,
+            'consent_marketing': customer.consent_marketing,
+            'preferred_communication': customer.preferred_communication,
+            'is_verified': customer.is_verified,
+            'verification_completed_at': customer.verification_completed_at,
+            'created_at': customer.created_at,
+            'updated_at': customer.updated_at
+        }
+        
+        # Prepare steps data
+        steps_data = [
+            {
+                'id': str(step.id),
+                'step_number': step.step_number,
+                'step_name': step.step_name,
+                'step_data': step.step_data,
+                'is_completed': step.is_completed,
+                'completed_at': step.completed_at,
+                'created_at': step.created_at,
+                'updated_at': step.updated_at
+            } for step in steps
+        ]
+        
+        # Generate PDF
+        pdf_path = pdf_service.generate_application_pdf(application_data, customer_data, steps_data)
+        
+        # Log the PDF generation
+        await audit_service.log_pdf_downloaded(
+            user_id=str(current_user.id),
+            application_id=str(application.id),
+            application_data={"application_number": application.application_number},
+            ip_address="",  # Will be filled by middleware
+            user_agent=""   # Will be filled by middleware
+        )
+        
+        # Return the PDF file
+        filename = f"application_{application.application_number}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        return FileResponse(
+            pdf_path, 
+            filename=filename,
+            media_type='application/pdf'
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate PDF for application {application_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate PDF report")

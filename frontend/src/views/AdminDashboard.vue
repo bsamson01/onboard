@@ -1,17 +1,5 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center py-6">
-          <h1 class="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <div class="flex items-center space-x-4">
-            <span class="text-sm text-gray-500">Welcome, {{ authStore.user?.first_name }}</span>
-            <button @click="handleLogout" class="btn-secondary">Logout</button>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Dashboard Content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

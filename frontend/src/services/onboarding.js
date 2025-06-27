@@ -36,5 +36,11 @@ export const onboardingService = {
   
   // Get progress
   getProgress: (applicationId) => 
-    api.get(`/onboarding/applications/${applicationId}/progress`)
+    api.get(`/onboarding/applications/${applicationId}/progress`),
+  
+  // Download application PDF
+  downloadApplicationPDF: (applicationId) => 
+    api.get(`/onboarding/applications/${applicationId}/download-pdf`, {
+      responseType: 'blob'
+    })
 }

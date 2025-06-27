@@ -354,3 +354,6 @@ class StatusService:
             "color": "gray",
             "description": "Status information not available"
         })
+
+# Create a singleton instance for import
+status_service = StatusService()

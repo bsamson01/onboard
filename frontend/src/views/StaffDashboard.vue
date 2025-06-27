@@ -2,12 +2,74 @@
   <div class="min-h-screen bg-gray-50">
     <!-- Dashboard Content -->
     <div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
+      <!-- Metrics Row (remains above) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6 mb-6 md:mb-8">
         <div class="bg-white rounded-lg shadow p-4 sm:p-6">
-          <h3 class="text-xs sm:text-sm font-medium text-gray-500">Active Applications</h3>
-          <p class="text-2xl sm:text-3xl font-bold text-green-600">{{ dashboardData.active_applications || 0 }}</p>
+          <h3 class="text-xs sm:text-sm font-medium text-gray-500">Ready for Review</h3>
+          <p class="text-2xl sm:text-3xl font-bold text-yellow-600">{{ dashboardData.ready_for_review_applications || 0 }}</p>
         </div>
         <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+          <h3 class="text-xs sm:text-sm font-medium text-gray-500">In Progress</h3>
+          <p class="text-2xl sm:text-3xl font-bold text-blue-600">{{ dashboardData.active_applications || 0 }}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+          <h3 class="text-xs sm:text-sm font-medium text-gray-500">Approved</h3>
+          <p class="text-2xl sm:text-3xl font-bold text-green-600">{{ dashboardData.approved_applications || 0 }}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+          <h3 class="text-xs sm:text-sm font-medium text-gray-500">Rejected</h3>
+          <p class="text-2xl sm:text-3xl font-bold text-red-600">{{ dashboardData.rejected_applications || 0 }}</p>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+          <h3 class="text-xs sm:text-sm font-medium text-gray-500">Cancelled</h3>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-600">{{ dashboardData.cancelled_applications || 0 }}</p>
+        </div>
+      </div>
+      <!-- Activities and Applications Side by Side -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
+        <!-- Onboarding Applications for Review (now on the left) -->
+        <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex-1 overflow-x-auto">
+          <h3 class="text-base sm:text-lg font-medium text-gray-900 mb-4">Onboarding Applications for Review</h3>
+          <div v-if="isLoadingApplications" class="flex justify-center items-center py-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+          <div v-else>
+            <table class="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Application</th>
+                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
+                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <tr v-for="app in onboardingApplications" :key="app.id" class="hover:bg-gray-50">
+                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap">
+                    <div class="text-xs sm:text-sm font-medium text-gray-900">{{ app.application_number }}</div>
+                    <div class="text-xs sm:text-sm text-gray-500">ID: {{ app.id.slice(0, 8) }}...</div>
+                  </td>
+                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {{ app.status_display.label }}
+                    </span>
+                  </td>
+                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
+                    {{ formatDate(app.submitted_at || app.created_at) }}
+                  </td>
+                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm font-medium space-x-2">
+                    <button @click="viewApplication(app)" class="text-blue-600 hover:text-blue-900">View</button>
+                    <button @click="openStatusModal(app)" class="text-green-600 hover:text-green-900">Update Status</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="onboardingApplications.length === 0" class="text-center py-8 text-gray-500">No onboarding applications ready for review found.</div>
+          </div>
+        </div>
+        <!-- Recent Activities (now on the right) -->
+        <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex flex-col">
           <h3 class="text-xs sm:text-sm font-medium text-gray-500">Recent Activities</h3>
           <div class="relative py-4 space-y-2">
             <div v-for="activity in dashboardData.recent_activities || []" :key="activity.timestamp + activity.label" class="relative bg-white rounded-xl shadow p-4 flex flex-col gap-1 border border-gray-100">
@@ -26,7 +88,6 @@
                 <span v-if="activity.user_display" class="font-bold text-sm text-gray-900">{{ activity.user_display }}</span>
                 <span v-if="activity.application_number" class="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-medium">App #{{ activity.application_number }}</span>
               </div>
-              <!-- <div class="text-xs sm:text-sm text-gray-700">{{ activity.description }}</div> -->
               <div class="text-xs text-gray-400 mt-1">{{ formatDate(activity.timestamp) }}</div>
             </div>
             <div v-if="!dashboardData.recent_activities || dashboardData.recent_activities.length === 0" class="text-gray-400">No recent activities</div>
@@ -34,46 +95,6 @@
           <div v-if="dashboardData.recent_activities && dashboardData.recent_activities.length > 0" class="flex justify-end mt-2">
             <router-link to="/staff/activities" class="text-blue-600 hover:underline text-xs sm:text-sm font-medium">View All Activities</router-link>
           </div>
-        </div>
-      </div>
-      <!-- Onboarding Applications Review Panel -->
-      <div class="bg-white rounded-lg shadow p-4 sm:p-6 mt-6 sm:mt-8">
-        <h3 class="text-base sm:text-lg font-medium text-gray-900 mb-4">Onboarding Applications for Review</h3>
-        <div v-if="isLoadingApplications" class="flex justify-center items-center py-8">
-          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        </div>
-        <div v-else class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Application</th>
-                <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
-                <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="app in onboardingApplications" :key="app.id" class="hover:bg-gray-50">
-                <td class="px-2 sm:px-6 py-4 whitespace-nowrap">
-                  <div class="text-xs sm:text-sm font-medium text-gray-900">{{ app.application_number }}</div>
-                  <div class="text-xs sm:text-sm text-gray-500">ID: {{ app.id.slice(0, 8) }}...</div>
-                </td>
-                <td class="px-2 sm:px-6 py-4 whitespace-nowrap">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {{ app.status_display.label }}
-                  </span>
-                </td>
-                <td class="px-2 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
-                  {{ formatDate(app.submitted_at || app.created_at) }}
-                </td>
-                <td class="px-2 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm font-medium space-x-2">
-                  <button @click="viewApplication(app)" class="text-blue-600 hover:text-blue-900">View</button>
-                  <button @click="openStatusModal(app)" class="text-green-600 hover:text-green-900">Update Status</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-if="onboardingApplications.length === 0" class="text-center py-8 text-gray-500">No onboarding applications found.</div>
         </div>
       </div>
       <!-- Application Details Modal -->

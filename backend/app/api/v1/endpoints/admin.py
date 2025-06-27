@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from typing import Dict, Any, List
 import httpx
 import asyncio
@@ -495,11 +495,51 @@ async def get_staff_dashboard(
 ):
     """Get staff dashboard data (loan officer, risk officer, admin)."""
     try:
-        # Get staff-appropriate statistics
+        from app.models.onboarding import OnboardingApplication, OnboardingStatus
+        from sqlalchemy import func
+        # Active applications
+        active_count = await session.execute(
+            select(func.count(OnboardingApplication.id)).where(
+                OnboardingApplication.status.in_([
+                    OnboardingStatus.DRAFT,
+                    OnboardingStatus.IN_PROGRESS,
+                    OnboardingStatus.PENDING_DOCUMENTS,
+                    OnboardingStatus.UNDER_REVIEW
+                ])
+            )
+        )
+        # Approved applications
+        approved_count = await session.execute(
+            select(func.count(OnboardingApplication.id)).where(
+                OnboardingApplication.status == OnboardingStatus.APPROVED
+            )
+        )
+        # Rejected applications
+        rejected_count = await session.execute(
+            select(func.count(OnboardingApplication.id)).where(
+                OnboardingApplication.status == OnboardingStatus.REJECTED
+            )
+        )
+        # Ready for review (under_review)
+        ready_for_review_count = await session.execute(
+            select(func.count(OnboardingApplication.id)).where(
+                OnboardingApplication.status == OnboardingStatus.UNDER_REVIEW
+            )
+        )
+        # Cancelled applications (status = rejected and cancellation_reason is not null)
+        cancelled_count = await session.execute(
+            select(func.count(OnboardingApplication.id)).where(
+                OnboardingApplication.status == OnboardingStatus.REJECTED,
+                OnboardingApplication.cancellation_reason.isnot(None)
+            )
+        )
         dashboard_data = {
-            "active_applications": await _get_active_applications_count(session),
+            "active_applications": active_count.scalar() or 0,
+            "approved_applications": approved_count.scalar() or 0,
+            "rejected_applications": rejected_count.scalar() or 0,
+            "ready_for_review_applications": ready_for_review_count.scalar() or 0,
+            "cancelled_applications": cancelled_count.scalar() or 0,
             "recent_activities": await _get_recent_activities(session),
-            # Add more staff-appropriate data as needed
         }
         return dashboard_data
     except Exception as e:

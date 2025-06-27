@@ -292,31 +292,36 @@ const viewApplicationDetails = (application) => {
   router.push(`/onboarding?app=${application.id}`)
 }
 
-const downloadApplication = (application) => {
-  const summary = `
-Application Summary
-==================
-Application Number: ${application.application_number}
-Status: ${formatStatus(application.status)}
-Created: ${formatDate(application.created_at)}
-Submitted: ${application.submitted_at ? formatDate(application.submitted_at) : 'N/A'}
-
-Credit Score: ${application.eligibility_result?.score || 'N/A'}
-Grade: ${application.eligibility_result?.grade || 'N/A'}
-
-Progress: ${application.progress_percentage}%
-Current Step: ${getStepName(application.current_step)}
-  `.trim()
-
-  const blob = new Blob([summary], { type: 'text/plain' })
-  const url = window.URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `application-${application.application_number}.txt`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  window.URL.revokeObjectURL(url)
+const downloadApplication = async (application) => {
+  try {
+    // Show loading state
+    const downloadButton = event.target
+    const originalText = downloadButton.textContent
+    downloadButton.textContent = 'Generating PDF...'
+    downloadButton.disabled = true
+    
+    // Call the PDF download endpoint using the service
+    const response = await onboardingService.downloadApplicationPDF(application.id)
+    
+    // Create download link
+    const url = window.URL.createObjectURL(response.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `application-${application.application_number}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    
+  } catch (err) {
+    console.error('Failed to download PDF:', err)
+    error.value = err.response?.data?.detail || 'Failed to download PDF. Please try again.'
+  } finally {
+    // Restore button state
+    const downloadButton = event.target
+    downloadButton.textContent = 'Download'
+    downloadButton.disabled = false
+  }
 }
 
 const handleLogout = () => {

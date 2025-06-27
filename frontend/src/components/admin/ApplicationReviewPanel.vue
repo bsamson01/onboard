@@ -1,24 +1,5 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Navigation Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center py-4">
-          <div class="flex items-center space-x-4">
-            <button @click="goToAdminDashboard" class="text-gray-500 hover:text-gray-700">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-              </svg>
-            </button>
-            <h1 class="text-xl font-semibold text-gray-900">Admin Panel</h1>
-          </div>
-          <div class="flex items-center space-x-4">
-            <span class="text-sm text-gray-500">Welcome, {{ authStore.user?.first_name }}</span>
-            <button @click="authStore.logout" class="text-sm text-gray-500 hover:text-gray-700">Logout</button>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <div class="py-8">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

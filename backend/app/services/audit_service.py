@@ -367,18 +367,36 @@ class AuditService:
         ip_address: Optional[str],
         user_agent: Optional[str]
     ) -> str:
-        """Create a unique fingerprint for consent verification."""
+        """Create a unique fingerprint for consent data."""
         import hashlib
         
-        # Create a string representation of the consent
-        consent_string = json.dumps(consent_data, sort_keys=True)
-        timestamp = datetime.utcnow().isoformat()
+        # Create a deterministic string representation
+        consent_str = json.dumps(consent_data, sort_keys=True, default=str)
+        fingerprint_data = f"{consent_str}|{ip_address}|{user_agent}"
         
-        # Include context for uniqueness
-        fingerprint_data = f"{consent_string}|{timestamp}|{ip_address}|{user_agent}"
-        
-        # Generate SHA-256 hash
-        return hashlib.sha256(fingerprint_data.encode()).hexdigest()
+        # Generate hash
+        return hashlib.sha256(fingerprint_data.encode()).hexdigest()[:16]
+    
+    async def log_pdf_downloaded(
+        self,
+        user_id: str,
+        application_id: str,
+        application_data: Dict[str, Any],
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ):
+        """Log PDF download for an application."""
+        await self.log_onboarding_action(
+            user_id=user_id,
+            action="application_pdf_downloaded",
+            resource_type="onboarding_application",
+            resource_id=application_id,
+            old_values=None,
+            new_values=application_data,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            additional_data={"document_type": "application_pdf"}
+        )
     
     async def get_application_audit_trail(
         self,

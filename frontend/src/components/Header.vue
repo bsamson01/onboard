@@ -3,11 +3,6 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
       <div class="flex items-center gap-4">
         <router-link to="/" class="text-xl font-bold text-blue-700">Onboard</router-link>
-        <nav class="hidden sm:flex gap-4 ml-6">
-          <router-link to="/" class="text-gray-600 hover:text-blue-700 font-medium">Home</router-link>
-          <router-link v-if="isStaff" to="/staff" class="text-gray-600 hover:text-blue-700 font-medium">Dashboard</router-link>
-          <router-link v-if="isStaff" to="/staff/activities" class="text-gray-600 hover:text-blue-700 font-medium">Activities</router-link>
-        </nav>
       </div>
       <div class="flex items-center gap-4">
         <span v-if="user" class="text-sm text-gray-700 font-medium">Welcome, {{ user.first_name }}</span>
