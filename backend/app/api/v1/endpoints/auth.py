@@ -405,16 +405,24 @@ async def get_user_by_email(db: AsyncSession, email: str):
 
 async def update_user_last_login(db: AsyncSession, user_id: str, ip_address: str):
     """Update user's last login timestamp."""
-    stmt = update(User).where(User.id == user_id).values(
-        last_login=datetime.now()
-    )
-    await db.execute(stmt)
+    # Get the user and update directly
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar()
+    
+    if user:
+        user.last_login = datetime.now()
+        # The changes will be committed by the dependency injection
 
 
 async def update_user_password(db: AsyncSession, user_id: str, hashed_password: str):
     """Update user's password."""
-    stmt = update(User).where(User.id == user_id).values(
-        hashed_password=hashed_password,
-        password_changed_at=datetime.now()
-    )
-    await db.execute(stmt)
+    # Get the user and update directly
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar()
+    
+    if user:
+        user.hashed_password = hashed_password
+        user.password_changed_at = datetime.now()
+        # The changes will be committed by the dependency injection

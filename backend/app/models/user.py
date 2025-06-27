@@ -16,9 +16,9 @@ class UserRole(str, Enum):
 
 
 class UserState(str, Enum):
-    REGISTERED = "registered"
-    ONBOARDED = "onboarded"
-    OUTDATED = "outdated"
+    REGISTERED = "REGISTERED"
+    ONBOARDED = "ONBOARDED"
+    OUTDATED = "OUTDATED"
 
 
 class User(Base):

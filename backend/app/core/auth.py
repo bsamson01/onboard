@@ -203,12 +203,14 @@ async def authenticate_user(session: AsyncSession, email: str, password: str) ->
         if user.failed_login_attempts >= 5:
             user.is_locked = True
         
-        # Let the dependency injection handle the commit
+        # Commit the changes immediately
+        await session.commit()
         return None
     
     # Reset failed login attempts on successful login
     user.failed_login_attempts = 0
     user.last_login = datetime.now()
-    # Let the dependency injection handle the commit
+    # Commit the changes immediately
+    await session.commit()
     
     return user

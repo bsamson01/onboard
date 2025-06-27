@@ -78,9 +78,39 @@ async def debug_login():
             # Test user serialization
             from app.schemas.auth import UserResponse
             try:
-                user_response = UserResponse.model_validate(auth_user).model_dump()
+                # Refresh the user object to ensure all attributes are loaded
+                await session.refresh(auth_user)
+                
+                # Convert to dict first, then validate
+                user_dict = {
+                    "id": str(auth_user.id),
+                    "email": auth_user.email,
+                    "username": auth_user.username,
+                    "first_name": auth_user.first_name,
+                    "last_name": auth_user.last_name,
+                    "phone_number": auth_user.phone_number,
+                    "role": auth_user.role,
+                    "is_active": auth_user.is_active,
+                    "is_verified": auth_user.is_verified,
+                    "is_locked": auth_user.is_locked,
+                    "failed_login_attempts": auth_user.failed_login_attempts,
+                    "last_login": auth_user.last_login,
+                    "password_changed_at": auth_user.password_changed_at,
+                    "created_at": auth_user.created_at,
+                    "updated_at": auth_user.updated_at,
+                    "mfa_enabled": auth_user.mfa_enabled,
+                    "profile_picture_url": auth_user.profile_picture_url,
+                    "timezone": auth_user.timezone,
+                    "language": auth_user.language,
+                    "user_state": auth_user.user_state,
+                    "onboarding_completed_at": auth_user.onboarding_completed_at,
+                    "last_profile_update": auth_user.last_profile_update,
+                    "profile_expiry_date": auth_user.profile_expiry_date,
+                }
+                
+                user_response = UserResponse.model_validate(user_dict)
                 print("✅ User serialization successful")
-                print(f"   - Serialized fields: {list(user_response.keys())}")
+                print(f"   - Serialized fields: {list(user_response.model_dump().keys())}")
             except Exception as e:
                 print(f"❌ User serialization failed: {e}")
                 return

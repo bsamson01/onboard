@@ -1,8 +1,9 @@
-from pydantic import BaseModel, EmailStr, validator, Field, constr, conint
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from enum import Enum
 import re
+from pydantic import BaseModel, EmailStr, validator, Field, conint
+from pydantic.types import Annotated
 
 from app.models.user import UserRole, UserState
 from app.models.onboarding import DocumentType, DocumentStatus
@@ -55,42 +56,42 @@ class UserProfileResponse(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     """Request to update user profile information."""
     # Basic User Information with validation
-    first_name: Optional[constr(min_length=1, max_length=100, strip_whitespace=True)] = Field(None, description="First name (1-100 characters)")
-    last_name: Optional[constr(min_length=1, max_length=100, strip_whitespace=True)] = Field(None, description="Last name (1-100 characters)")
-    phone_number: Optional[constr(min_length=10, max_length=20)] = Field(None, description="Phone number (10-20 characters)")
+    first_name: Optional[Annotated[str, Field(min_length=1, max_length=100)]] = Field(None, description="First name (1-100 characters)")
+    last_name: Optional[Annotated[str, Field(min_length=1, max_length=100)]] = Field(None, description="Last name (1-100 characters)")
+    phone_number: Optional[Annotated[str, Field(min_length=10, max_length=20)]] = Field(None, description="Phone number (10-20 characters)")
     
     # Personal Information with validation
     date_of_birth: Optional[str] = Field(None, description="Date of birth in YYYY-MM-DD format")
-    gender: Optional[constr(max_length=10)] = Field(None, description="Gender")
-    marital_status: Optional[constr(max_length=20)] = Field(None, description="Marital status")
-    nationality: Optional[constr(max_length=50)] = Field(None, description="Nationality")
-    id_number: Optional[constr(min_length=5, max_length=50)] = Field(None, description="ID number (5-50 characters)")
-    id_type: Optional[constr(max_length=20)] = Field(None, description="ID type")
+    gender: Optional[Annotated[str, Field(max_length=10)]] = Field(None, description="Gender")
+    marital_status: Optional[Annotated[str, Field(max_length=20)]] = Field(None, description="Marital status")
+    nationality: Optional[Annotated[str, Field(max_length=50)]] = Field(None, description="Nationality")
+    id_number: Optional[Annotated[str, Field(min_length=5, max_length=50)]] = Field(None, description="ID number (5-50 characters)")
+    id_type: Optional[Annotated[str, Field(max_length=20)]] = Field(None, description="ID type")
     
     # Contact Information with validation
-    address_line1: Optional[constr(max_length=255, strip_whitespace=True)] = Field(None, description="Address line 1")
-    address_line2: Optional[constr(max_length=255, strip_whitespace=True)] = Field(None, description="Address line 2")
-    city: Optional[constr(max_length=100, strip_whitespace=True)] = Field(None, description="City")
-    state_province: Optional[constr(max_length=100, strip_whitespace=True)] = Field(None, description="State/Province")
-    postal_code: Optional[constr(max_length=20, strip_whitespace=True)] = Field(None, description="Postal code")
-    country: Optional[constr(max_length=50, strip_whitespace=True)] = Field(None, description="Country")
+    address_line1: Optional[Annotated[str, Field(max_length=255)]] = Field(None, description="Address line 1")
+    address_line2: Optional[Annotated[str, Field(max_length=255)]] = Field(None, description="Address line 2")
+    city: Optional[Annotated[str, Field(max_length=100)]] = Field(None, description="City")
+    state_province: Optional[Annotated[str, Field(max_length=100)]] = Field(None, description="State/Province")
+    postal_code: Optional[Annotated[str, Field(max_length=20)]] = Field(None, description="Postal code")
+    country: Optional[Annotated[str, Field(max_length=50)]] = Field(None, description="Country")
     
     # Emergency Contact with validation
-    emergency_contact_name: Optional[constr(max_length=200, strip_whitespace=True)] = Field(None, description="Emergency contact name")
-    emergency_contact_phone: Optional[constr(min_length=10, max_length=20)] = Field(None, description="Emergency contact phone")
-    emergency_contact_relationship: Optional[constr(max_length=50)] = Field(None, description="Emergency contact relationship")
+    emergency_contact_name: Optional[Annotated[str, Field(max_length=200)]] = Field(None, description="Emergency contact name")
+    emergency_contact_phone: Optional[Annotated[str, Field(min_length=10, max_length=20)]] = Field(None, description="Emergency contact phone")
+    emergency_contact_relationship: Optional[Annotated[str, Field(max_length=50)]] = Field(None, description="Emergency contact relationship")
     
     # Employment Information with validation
-    employment_status: Optional[constr(max_length=50)] = Field(None, description="Employment status")
-    employer_name: Optional[constr(max_length=255, strip_whitespace=True)] = Field(None, description="Employer name")
-    job_title: Optional[constr(max_length=100, strip_whitespace=True)] = Field(None, description="Job title")
+    employment_status: Optional[Annotated[str, Field(max_length=50)]] = Field(None, description="Employment status")
+    employer_name: Optional[Annotated[str, Field(max_length=255)]] = Field(None, description="Employer name")
+    job_title: Optional[Annotated[str, Field(max_length=100)]] = Field(None, description="Job title")
     monthly_income: Optional[float] = Field(None, ge=0, le=10000000, description="Monthly income (0-10M)")
     employment_duration_months: Optional[conint(ge=0, le=600)] = Field(None, description="Employment duration in months (0-600)")
     
     # Financial Information with validation
-    bank_name: Optional[constr(max_length=100, strip_whitespace=True)] = Field(None, description="Bank name")
-    bank_account_number: Optional[constr(min_length=5, max_length=50)] = Field(None, description="Bank account number")
-    bank_account_type: Optional[constr(max_length=20)] = Field(None, description="Bank account type")
+    bank_name: Optional[Annotated[str, Field(max_length=100)]] = Field(None, description="Bank name")
+    bank_account_number: Optional[Annotated[str, Field(min_length=5, max_length=50)]] = Field(None, description="Bank account number")
+    bank_account_type: Optional[Annotated[str, Field(max_length=20)]] = Field(None, description="Bank account type")
     has_other_loans: Optional[bool] = Field(None, description="Has other loans")
     other_loans_details: Optional[Dict[str, Any]] = Field(None, description="Other loans details")
     
@@ -98,7 +99,7 @@ class ProfileUpdateRequest(BaseModel):
     consent_data_processing: Optional[bool] = Field(None, description="Consent for data processing")
     consent_credit_check: Optional[bool] = Field(None, description="Consent for credit check")
     consent_marketing: Optional[bool] = Field(None, description="Consent for marketing")
-    preferred_communication: Optional[constr(max_length=20)] = Field(None, description="Preferred communication method")
+    preferred_communication: Optional[Annotated[str, Field(max_length=20)]] = Field(None, description="Preferred communication method")
     
     @validator('phone_number', 'emergency_contact_phone')
     def validate_phone_number(cls, v):
@@ -240,7 +241,7 @@ class DocumentVerificationRequest(BaseModel):
 class RoleUpdateRequest(BaseModel):
     """Request to update user role (admin only)."""
     new_role: UserRole = Field(..., description="New role to assign")
-    reason: Optional[constr(max_length=500, strip_whitespace=True)] = Field(None, description="Reason for role change (max 500 characters)")
+    reason: Optional[Annotated[str, Field(max_length=500)]] = Field(None, description="Reason for role change (max 500 characters)")
     
     @validator('reason')
     def validate_reason(cls, v):
@@ -252,7 +253,7 @@ class RoleUpdateRequest(BaseModel):
 class StateUpdateRequest(BaseModel):
     """Request to update user state (admin only)."""
     new_state: UserState = Field(..., description="New state to assign")
-    reason: Optional[constr(max_length=500, strip_whitespace=True)] = Field(None, description="Reason for state change (max 500 characters)")
+    reason: Optional[Annotated[str, Field(max_length=500)]] = Field(None, description="Reason for state change (max 500 characters)")
     
     @validator('reason')
     def validate_reason(cls, v):
@@ -321,9 +322,9 @@ class ProfileUpdateRequiredResponse(BaseModel):
 
 class BulkUserOperationRequest(BaseModel):
     """Request for bulk operations on multiple users."""
-    user_ids: List[constr(min_length=1)] = Field(..., min_items=1, max_items=100, description="List of user IDs (1-100 users)")
-    operation: constr(regex=r'^(activate|deactivate|verify|lock|unlock)$') = Field(..., description="Operation to perform")
-    reason: Optional[constr(max_length=500, strip_whitespace=True)] = Field(None, description="Reason for bulk operation")
+    user_ids: List[Annotated[str, Field(min_length=1)]] = Field(..., min_items=1, max_items=100, description="List of user IDs (1-100 users)")
+    operation: Annotated[str, Field(pattern=r'^(activate|deactivate|verify|lock|unlock)$')] = Field(..., description="Operation to perform")
+    reason: Optional[Annotated[str, Field(max_length=500)]] = Field(None, description="Reason for bulk operation")
     
     @validator('user_ids')
     def validate_user_ids(cls, v):
