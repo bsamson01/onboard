@@ -408,6 +408,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { loanService } from '@/services/loan'
 
 // Components
 import SystemHealthPanel from '@/components/admin/SystemHealthPanel.vue'
@@ -681,8 +682,8 @@ const viewApplication = async (application) => {
 const viewLoanApplication = async (application) => {
   try {
     selectedApplication.value = application
-    const detailsResponse = await api.get(`/loans/applications/${application.id}`)
-    selectedLoanDetails.value = detailsResponse.data
+    const detailsResponse = await loanService.getLoanApplication(application.id)
+    selectedLoanDetails.value = detailsResponse
     const statusResponse = await api.get(`/status/applications/${application.id}/status`)
     applicationDetails.value = statusResponse.data
   } catch (error) {

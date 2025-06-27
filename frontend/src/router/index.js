@@ -62,7 +62,12 @@ const routes = [
     name: 'StaffActivities',
     component: ActivitiesPage,
     meta: { requiresAuth: true, roles: ['admin', 'loan_officer', 'risk_officer'] }
-  }
+  },
+  {
+    path: '/signup',
+    name: 'Signup',
+    component: () => import('@/views/Signup.vue'),
+  },
 ]
 
 const router = createRouter({

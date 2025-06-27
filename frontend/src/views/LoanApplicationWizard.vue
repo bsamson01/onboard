@@ -52,17 +52,16 @@
         <div v-if="isReadOnly" class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div class="flex">
             <div class="flex-shrink-0">
-              <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+              <svg class="h-5 w-5" :class="`text-${statusInfo?.color}-400`" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
               </svg>
             </div>
             <div class="ml-3">
-              <h3 class="text-sm font-medium text-blue-800">Application Under Review</h3>
-              <div class="mt-2 text-sm text-blue-700">
-                <p>Your loan application has been submitted and is currently under review. You cannot make changes to the application at this time.</p>
-                <p v-if="application?.status === 'submitted'" class="mt-1">We will notify you once a decision has been made on your application.</p>
-                <p v-else-if="application?.status === 'approved'" class="mt-1">Your application has been approved! Please check your email for further instructions.</p>
-                <p v-else-if="application?.status === 'rejected'" class="mt-1">Your application has been reviewed. Please contact our support team if you have any questions.</p>
+              <h3 class="text-sm font-medium" :class="`text-${statusInfo?.color}-800`">
+                Application {{ statusInfo?.label }}
+              </h3>
+              <div class="mt-2 text-sm" :class="`text-${statusInfo?.color}-700`">
+                <p>{{ statusInfo?.message }}</p>
               </div>
             </div>
           </div>
@@ -328,13 +327,71 @@ const validationErrors = ref([])
 const loanTypeOptions = loanService.getLoanTypeOptions()
 const repaymentTermOptions = loanService.getRepaymentTermOptions()
 
+// Loan status info
+const loanStatusInfo = {
+  in_progress: {
+    label: 'In Progress',
+    color: 'blue',
+    message: 'You can continue editing your application.'
+  },
+  submitted: {
+    label: 'Submitted',
+    color: 'yellow',
+    message: 'Your loan application has been submitted and is currently under review. You cannot make changes to the application at this time.'
+  },
+  under_review: {
+    label: 'Under Review',
+    color: 'orange',
+    message: 'Your application is under review. Please wait for a decision.'
+  },
+  approved: {
+    label: 'Approved',
+    color: 'green',
+    message: 'Your application has been approved! Please check your email for further instructions.'
+  },
+  rejected: {
+    label: 'Rejected',
+    color: 'red',
+    message: 'Your application has been reviewed and was not approved. Please contact our support team if you have any questions.'
+  },
+  cancelled: {
+    label: 'Cancelled',
+    color: 'gray',
+    message: 'This application was cancelled and cannot be edited.'
+  },
+  awaiting_disbursement: {
+    label: 'Awaiting Disbursement',
+    color: 'purple',
+    message: 'Your application is approved and awaiting disbursement.'
+  },
+  done: {
+    label: 'Completed',
+    color: 'green',
+    message: 'Your loan application process is complete.'
+  },
+  completed: {
+    label: 'Completed',
+    color: 'green',
+    message: 'Your loan application process is complete.'
+  }
+}
+
+const statusInfo = computed(() => {
+  if (!application.value?.status) return null
+  return loanStatusInfo[application.value.status] || {
+    label: application.value.status,
+    color: 'gray',
+    message: 'Status unknown.'
+  }
+})
+
 // Computed properties
 const isEligible = computed(() => {
   return eligibilityInfo.value?.is_eligible === true
 })
 
 const isReadOnly = computed(() => {
-  return application.value?.status === 'submitted' || application.value?.status === 'approved' || application.value?.status === 'rejected'
+  return !['in_progress', 'draft'].includes(application.value?.status)
 })
 
 const canEdit = computed(() => {

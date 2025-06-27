@@ -1,4 +1,5 @@
 import api from './api'
+import { useAuthStore } from '@/stores/auth'
 
 export const loanService = {
   // Eligibility checking
@@ -32,8 +33,18 @@ export const loanService = {
   },
   
   async getLoanApplication(id) {
-    const response = await api.get(`/loans/applications/${id}`)
-    return response.data
+    const authStore = useAuthStore()
+    const user = authStore.user
+    
+    // Use admin endpoint if user is staff or admin
+    if (user && (user.role === 'staff' || user.role === 'admin' || user.role === 'loan_officer')) {
+      const response = await api.get(`/loans/admin/applications/${id}`)
+      return response.data
+    } else {
+      // Use regular customer endpoint
+      const response = await api.get(`/loans/applications/${id}`)
+      return response.data
+    }
   },
   
   async updateLoanApplication(id, data) {
@@ -77,6 +88,11 @@ export const loanService = {
     const url = `/loans/admin/applications${queryString ? `?${queryString}` : ''}`
     
     const response = await api.get(url)
+    return response.data
+  },
+  
+  async getAdminLoanApplication(id) {
+    const response = await api.get(`/loans/admin/applications/${id}`)
     return response.data
   },
   

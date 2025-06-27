@@ -41,6 +41,9 @@
             placeholder="Enter your password"
           />
           <p v-if="errors.password" class="mt-1 text-sm text-red-600">{{ errors.password }}</p>
+          <div class="mt-2 text-right">
+            <a href="#" @click.prevent="goToResetPassword" class="text-blue-600 hover:underline text-sm font-medium">Forgot password?</a>
+          </div>
         </div>
 
         <div v-if="loginError" class="rounded-md bg-red-50 p-4">
@@ -76,11 +79,9 @@
         </div>
 
         <div class="text-center">
-          <p class="text-sm text-gray-600">
-            Don't have an account? 
-            <a href="#" class="font-medium text-blue-600 hover:text-blue-500">
-              Contact support to get started
-            </a>
+          <p class="text-sm text-gray-600 mt-6">
+            Don't have an account?
+            <a href="#" @click.prevent="goToSignup" class="font-medium text-blue-600 hover:underline ml-1">Sign Up</a>
           </p>
         </div>
       </form>
@@ -162,5 +163,14 @@ const handleLogin = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+const goToSignup = () => {
+  router.push({ path: '/' })
+  // Optionally, you could use an event bus or state to trigger the signup modal
+}
+
+const goToResetPassword = () => {
+  router.push({ path: '/reset-password' })
 }
 </script>

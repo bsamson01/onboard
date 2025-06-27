@@ -354,7 +354,7 @@
                   <div>
                     <dt class="text-sm font-medium text-gray-500">Status</dt>
                     <dd class="mt-1">
-                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                             :class="getStatusBadgeClass(applicationDetails.status_display?.color || 'blue')">
                         {{ applicationDetails.status_display?.label || selectedLoanDetails.status }}
                       </span>
@@ -519,6 +519,7 @@ import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { loanService } from '@/services/loan'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -657,9 +658,9 @@ const viewLoanApplication = async (application) => {
   try {
     console.log('View loan application clicked:', application)
     selectedApplication.value = application
-    // Fetch loan application details
-    const detailsResponse = await api.get(`/loans/applications/${application.id}`)
-    selectedLoanDetails.value = detailsResponse.data
+    // Fetch loan application details using loan service
+    const detailsResponse = await loanService.getLoanApplication(application.id)
+    selectedLoanDetails.value = detailsResponse
     // Fetch status details for status badge
     const statusResponse = await api.get(`/status/applications/${application.id}/status`)
     applicationDetails.value = statusResponse.data
