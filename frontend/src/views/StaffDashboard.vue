@@ -26,74 +26,186 @@
           <p class="text-2xl sm:text-3xl font-bold text-gray-600">{{ dashboardData.cancelled_applications || 0 }}</p>
         </div>
       </div>
-      <!-- Activities and Applications Side by Side -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
-        <!-- Onboarding Applications for Review (now on the left) -->
-        <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex-1 overflow-x-auto">
-          <h3 class="text-base sm:text-lg font-medium text-gray-900 mb-4">Onboarding Applications for Review</h3>
-          <div v-if="isLoadingApplications" class="flex justify-center items-center py-8">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <!-- Tabbed Application Review Interface -->
+      <div class="bg-white rounded-lg shadow mb-6 md:mb-8">
+        <!-- Tab Navigation -->
+        <div class="border-b border-gray-200">
+          <nav class="-mb-px flex space-x-8 px-6 pt-6">
+            <button 
+              @click="activeTab = 'onboarding'"
+              :class="[
+                'py-2 px-1 border-b-2 font-medium text-sm transition-colors',
+                activeTab === 'onboarding' 
+                  ? 'border-blue-500 text-blue-600' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              ]"
+            >
+              Onboarding Applications
+              <span v-if="onboardingCount > 0" class="ml-2 bg-blue-100 text-blue-600 py-0.5 px-2 rounded-full text-xs font-medium">{{ onboardingCount }}</span>
+            </button>
+            <button 
+              @click="activeTab = 'loan'"
+              :class="[
+                'py-2 px-1 border-b-2 font-medium text-sm transition-colors',
+                activeTab === 'loan' 
+                  ? 'border-blue-500 text-blue-600' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              ]"
+            >
+              Loan Applications
+              <span v-if="loanCount > 0" class="ml-2 bg-blue-100 text-blue-600 py-0.5 px-2 rounded-full text-xs font-medium">{{ loanCount }}</span>
+            </button>
+          </nav>
+        </div>
+        
+        <!-- Tab Content -->
+        <div class="p-6">
+          <!-- Onboarding Applications Tab -->
+          <div v-if="activeTab === 'onboarding'">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-medium text-gray-900">Onboarding Applications</h3>
+              <button @click="loadApplications('onboarding')" class="text-blue-600 hover:text-blue-800 text-sm">
+                <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
+            <div v-if="isLoadingApplications" class="flex justify-center items-center py-12">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Application</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-for="app in onboardingApplications" :key="app.id" class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm font-medium text-gray-900">{{ app.application_number }}</div>
+                      <div class="text-sm text-gray-500">{{ app.loan_type }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                            :class="getStatusBadgeClass(app.status_display?.color || 'blue')">
+                        {{ app.status_display?.label || app.status }}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {{ formatDate(app.submitted_at || app.created_at) }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                      <button @click="viewApplication(app)" class="text-blue-600 hover:text-blue-900">View</button>
+                      <button @click="openStatusModal(app)" class="text-green-600 hover:text-green-900">Update Status</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-if="onboardingApplications.length === 0" class="text-center py-12 text-gray-500">
+                No onboarding applications ready for review.
+              </div>
+            </div>
           </div>
-          <div v-else>
-            <table class="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Application</th>
-                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
-                  <th class="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
-                <tr v-for="app in onboardingApplications" :key="app.id" class="hover:bg-gray-50">
-                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap">
-                    <div class="text-xs sm:text-sm font-medium text-gray-900">{{ app.application_number }}</div>
-                    <div class="text-xs sm:text-sm text-gray-500">ID: {{ app.id.slice(0, 8) }}...</div>
-                  </td>
-                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {{ app.status_display.label }}
-                    </span>
-                  </td>
-                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
-                    {{ formatDate(app.submitted_at || app.created_at) }}
-                  </td>
-                  <td class="px-2 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm font-medium space-x-2">
-                    <button @click="viewApplication(app)" class="text-blue-600 hover:text-blue-900">View</button>
-                    <button @click="openStatusModal(app)" class="text-green-600 hover:text-green-900">Update Status</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <div v-if="onboardingApplications.length === 0" class="text-center py-8 text-gray-500">No onboarding applications ready for review found.</div>
+          
+          <!-- Loan Applications Tab -->
+          <div v-if="activeTab === 'loan'">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-medium text-gray-900">Loan Applications</h3>
+              <button @click="loadApplications('loan')" class="text-blue-600 hover:text-blue-800 text-sm">
+                <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
+            <div v-if="isLoadingApplications" class="flex justify-center items-center py-12">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Application</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount & Type</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-for="app in loanApplications" :key="app.id" class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm font-medium text-gray-900">{{ app.application_number }}</div>
+                      <div class="text-sm text-gray-500">ID: {{ app.id.slice(0, 8) }}...</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm font-medium text-gray-900">${{ formatCurrency(app.requested_amount) }}</div>
+                      <div class="text-sm text-gray-500">{{ app.loan_type }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                            :class="getStatusBadgeClass(app.status_display?.color || 'blue')">
+                        {{ app.status_display?.label || app.status }}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {{ formatDate(app.submitted_at || app.created_at) }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                      <button @click="viewLoanApplication(app)" class="text-blue-600 hover:text-blue-900">View</button>
+                      <button @click="openStatusModal(app)" class="text-green-600 hover:text-green-900">Update Status</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-if="loanApplications.length === 0" class="text-center py-12 text-gray-500">
+                No loan applications ready for review.
+              </div>
+            </div>
           </div>
         </div>
-        <!-- Recent Activities (now on the right) -->
-        <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex flex-col">
-          <h3 class="text-xs sm:text-sm font-medium text-gray-500">Recent Activities</h3>
-          <div class="relative py-4 space-y-2">
-            <div v-for="activity in dashboardData.recent_activities || []" :key="activity.timestamp + activity.label" class="relative bg-white rounded-xl shadow p-4 flex flex-col gap-1 border border-gray-100">
-              <div class="flex flex-wrap items-center gap-2 mb-1">
-                <span :class="[
-                  'inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold',
-                  activity.label === 'Application Submitted' ? 'bg-blue-100 text-blue-700' :
-                  activity.label === 'Application Created' ? 'bg-green-100 text-green-700' :
-                  activity.label === 'Step Completed' ? 'bg-yellow-100 text-yellow-700' :
-                  activity.label === 'Document Uploaded' ? 'bg-purple-100 text-purple-700' :
-                  activity.label === 'Credit Score Calculated' ? 'bg-indigo-100 text-indigo-700' :
-                  'bg-gray-100 text-gray-700'
-                ]">
-                  {{ activity.label }}
-                </span>
-                <span v-if="activity.user_display" class="font-bold text-sm text-gray-900">{{ activity.user_display }}</span>
-                <span v-if="activity.application_number" class="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-medium">App #{{ activity.application_number }}</span>
-              </div>
-              <div class="text-xs text-gray-400 mt-1">{{ formatDate(activity.timestamp) }}</div>
+      </div>
+      
+      <!-- Recent Activities Section -->
+      <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-medium text-gray-900">Recent Activities</h3>
+          <router-link to="/staff/activities" class="text-blue-600 hover:text-blue-800 text-sm">View All</router-link>
+        </div>
+        <div class="space-y-3">
+          <div v-for="activity in dashboardData.recent_activities?.slice(0, 5) || []" :key="activity.timestamp + activity.label" 
+               class="flex items-center p-3 bg-gray-50 rounded-lg">
+            <div class="flex-shrink-0">
+              <span :class="[
+                'inline-flex items-center px-2 py-1 rounded text-xs font-medium',
+                activity.label === 'Application Submitted' ? 'bg-blue-100 text-blue-700' :
+                activity.label === 'Application Created' ? 'bg-green-100 text-green-700' :
+                activity.label === 'Step Completed' ? 'bg-yellow-100 text-yellow-700' :
+                activity.label === 'Document Uploaded' ? 'bg-purple-100 text-purple-700' :
+                activity.label === 'Credit Score Calculated' ? 'bg-indigo-100 text-indigo-700' :
+                'bg-gray-100 text-gray-700'
+              ]">
+                {{ activity.label }}
+              </span>
             </div>
-            <div v-if="!dashboardData.recent_activities || dashboardData.recent_activities.length === 0" class="text-gray-400">No recent activities</div>
+            <div class="ml-3 flex-1">
+              <div class="flex items-center justify-between">
+                <div>
+                  <span v-if="activity.user_display" class="font-medium text-sm text-gray-900">{{ activity.user_display }}</span>
+                  <span v-if="activity.application_number" class="ml-2 text-xs text-gray-500">App #{{ activity.application_number }}</span>
+                </div>
+                <span class="text-xs text-gray-400">{{ formatDate(activity.timestamp) }}</span>
+              </div>
+            </div>
           </div>
-          <div v-if="dashboardData.recent_activities && dashboardData.recent_activities.length > 0" class="flex justify-end mt-2">
-            <router-link to="/staff/activities" class="text-blue-600 hover:underline text-xs sm:text-sm font-medium">View All Activities</router-link>
+          <div v-if="!dashboardData.recent_activities || dashboardData.recent_activities.length === 0" 
+               class="text-center py-8 text-gray-500">
+            No recent activities
           </div>
         </div>
       </div>
@@ -109,6 +221,8 @@
                 </svg>
               </button>
             </div>
+            
+            <!-- Onboarding Application Details -->
             <div v-if="applicationDetails && selectedOnboardingDetails && selectedOnboardingDetails.steps" class="space-y-6">
               <div class="bg-gray-50 p-3 sm:p-4 rounded-lg">
                 <h4 class="font-medium text-gray-900 mb-3">Application Information</h4>
@@ -231,6 +345,116 @@
                 <div v-else class="text-gray-400 text-xs sm:text-sm">No data provided for this step.</div>
               </div>
             </div>
+            
+            <!-- Loan Application Details -->
+            <div v-if="applicationDetails && selectedLoanDetails" class="space-y-6">
+              <div class="bg-gray-50 p-4 rounded-lg">
+                <h4 class="font-medium text-gray-900 mb-3">Loan Application Information</h4>
+                <dl class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Status</dt>
+                    <dd class="mt-1">
+                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                            :class="getStatusBadgeClass(applicationDetails.status_display?.color || 'blue')">
+                        {{ applicationDetails.status_display?.label || selectedLoanDetails.status }}
+                      </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Requested Amount</dt>
+                    <dd class="mt-1 text-sm text-gray-900">${{ formatCurrency(selectedLoanDetails.requested_amount) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Loan Type</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ selectedLoanDetails.loan_type }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Loan Purpose</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ selectedLoanDetails.loan_purpose }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Repayment Period</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ selectedLoanDetails.repayment_period_months }} months</dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Submitted</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ formatDate(selectedLoanDetails.submitted_at) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Created</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ formatDate(selectedLoanDetails.created_at) }}</dd>
+                  </div>
+                  <div v-if="selectedLoanDetails.approved_amount">
+                    <dt class="text-sm font-medium text-gray-500">Approved Amount</dt>
+                    <dd class="mt-1 text-sm text-gray-900">${{ formatCurrency(selectedLoanDetails.approved_amount) }}</dd>
+                  </div>
+                  <div v-if="selectedLoanDetails.risk_level">
+                    <dt class="text-sm font-medium text-gray-500">Risk Level</dt>
+                    <dd class="mt-1">
+                      <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium"
+                            :class="{
+                              'bg-green-100 text-green-800': selectedLoanDetails.risk_level === 'low',
+                              'bg-yellow-100 text-yellow-800': selectedLoanDetails.risk_level === 'medium',
+                              'bg-orange-100 text-orange-800': selectedLoanDetails.risk_level === 'high',
+                              'bg-red-100 text-red-800': selectedLoanDetails.risk_level === 'very_high',
+                              'bg-gray-100 text-gray-800': !['low','medium','high','very_high'].includes(selectedLoanDetails.risk_level)
+                            }">
+                        {{ selectedLoanDetails.risk_level }}
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+              
+              <!-- Credit Score Information -->
+              <div v-if="selectedLoanDetails.latest_credit_score" class="bg-blue-50 p-4 rounded-lg">
+                <h4 class="font-medium text-gray-900 mb-3">Credit Assessment</h4>
+                <dl class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Credit Score</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ selectedLoanDetails.latest_credit_score.score }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Score Date</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ formatDate(selectedLoanDetails.latest_credit_score.scored_at) }}</dd>
+                  </div>
+                </dl>
+              </div>
+              
+              <!-- Latest Decision Information -->
+              <div v-if="selectedLoanDetails.latest_decision" class="bg-gray-50 p-4 rounded-lg">
+                <h4 class="font-medium text-gray-900 mb-3">Latest Decision</h4>
+                <dl class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Decision</dt>
+                    <dd class="mt-1">
+                      <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium"
+                            :class="{
+                              'bg-green-100 text-green-800': selectedLoanDetails.latest_decision.decision === 'approved',
+                              'bg-red-100 text-red-800': selectedLoanDetails.latest_decision.decision === 'rejected',
+                              'bg-yellow-100 text-yellow-800': selectedLoanDetails.latest_decision.decision === 'pending',
+                              'bg-gray-100 text-gray-800': !['approved','rejected','pending'].includes(selectedLoanDetails.latest_decision.decision)
+                            }">
+                        {{ selectedLoanDetails.latest_decision.decision }}
+                      </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Decision Date</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ formatDate(selectedLoanDetails.latest_decision.decision_date) }}</dd>
+                  </div>
+                  <div v-if="selectedLoanDetails.latest_decision.decision_reason">
+                    <dt class="text-sm font-medium text-gray-500">Reason</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ selectedLoanDetails.latest_decision.decision_reason }}</dd>
+                  </div>
+                  <div v-if="selectedLoanDetails.latest_decision.recommended_amount">
+                    <dt class="text-sm font-medium text-gray-500">Recommended Amount</dt>
+                    <dd class="mt-1 text-sm text-gray-900">${{ formatCurrency(selectedLoanDetails.latest_decision.recommended_amount) }}</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+            
             <div class="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 mt-6 pt-4 border-t">
               <button @click="closeApplicationModal" class="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50">Close</button>
               <button @click="openStatusModal(selectedApplication)" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Update Status</button>
@@ -308,14 +532,22 @@ const dashboardData = reactive({
   recent_activities: []
 })
 
+// Tab and application state
+const activeTab = ref('onboarding')
 const onboardingApplications = ref([])
+const loanApplications = ref([])
+const onboardingCount = ref(0)
+const loanCount = ref(0)
 const isLoadingApplications = ref(false)
+
+// Modal state
 const selectedApplication = ref(null)
 const applicationDetails = ref(null)
 const showStatusModal = ref(false)
 const allowedTransitions = ref([])
 const statusUpdateForm = ref({ application: null, status: '', reason: '', notes: '' })
 const selectedOnboardingDetails = ref(null)
+const selectedLoanDetails = ref(null)
 const imageBlobs = ref({});
 const loadingImages = ref({});
 const imageErrors = ref({});
@@ -356,16 +588,41 @@ const handleLogout = () => {
   router.push('/')
 }
 
-const loadOnboardingApplications = async () => {
+const loadApplications = async (type = null) => {
   try {
     isLoadingApplications.value = true
-    // Only onboarding applications
-    const params = new URLSearchParams({ limit: '50', offset: '0' })
+    const params = new URLSearchParams({ 
+      limit: '50', 
+      offset: '0'
+    })
+    
+    // Add application type filter if specified
+    if (type) {
+      params.append('application_type', type)
+    }
+    
     const response = await api.get(`/status/admin/applications?${params}`)
-    // Filter for onboarding only
-    onboardingApplications.value = (response.data.applications || []).filter(app => app.loan_type === 'Onboarding')
+    const applications = response.data.applications || []
+    
+    if (type === 'onboarding' || !type) {
+      onboardingApplications.value = applications.filter(app => app.loan_type === 'Onboarding')
+      onboardingCount.value = onboardingApplications.value.length
+    }
+    
+    if (type === 'loan' || !type) {
+      loanApplications.value = applications.filter(app => app.loan_type !== 'Onboarding')
+      loanCount.value = loanApplications.value.length
+    }
+    
+    // If no type specified, load both
+    if (!type) {
+      onboardingApplications.value = applications.filter(app => app.loan_type === 'Onboarding')
+      loanApplications.value = applications.filter(app => app.loan_type !== 'Onboarding')
+      onboardingCount.value = onboardingApplications.value.length
+      loanCount.value = loanApplications.value.length
+    }
   } catch (error) {
-    showAlert('Failed to load onboarding applications', 'error')
+    showAlert(`Failed to load ${type || 'all'} applications`, 'error')
   } finally {
     isLoadingApplications.value = false
   }
@@ -396,6 +653,22 @@ const viewApplication = async (application) => {
   }
 }
 
+const viewLoanApplication = async (application) => {
+  try {
+    console.log('View loan application clicked:', application)
+    selectedApplication.value = application
+    // Fetch loan application details
+    const detailsResponse = await api.get(`/loans/applications/${application.id}`)
+    selectedLoanDetails.value = detailsResponse.data
+    // Fetch status details for status badge
+    const statusResponse = await api.get(`/status/applications/${application.id}/status`)
+    applicationDetails.value = statusResponse.data
+  } catch (error) {
+    showAlert('Failed to load loan application details', 'error')
+    selectedLoanDetails.value = null
+  }
+}
+
 const openStatusModal = async (application) => {
   try {
     statusUpdateForm.value = { application, status: '', reason: '', notes: '' }
@@ -418,7 +691,7 @@ const updateStatus = async () => {
     await api.post(`/status/applications/${statusUpdateForm.value.application.id}/update-status`, updateData)
     showAlert('Application status updated successfully', 'success')
     closeStatusModal()
-    await loadOnboardingApplications()
+    await loadApplications()
   } catch (error) {
     showAlert('Failed to update status', 'error')
   }
@@ -428,6 +701,7 @@ const closeApplicationModal = () => {
   selectedApplication.value = null
   applicationDetails.value = null
   selectedOnboardingDetails.value = null
+  selectedLoanDetails.value = null
 }
 
 const closeStatusModal = () => {
@@ -452,6 +726,28 @@ const getStatusLabel = (status) => {
 const statusRequiresReason = computed(() => {
   return ['rejected', 'cancelled'].includes(statusUpdateForm.value.status)
 })
+
+// Utility functions
+const formatCurrency = (amount) => {
+  if (!amount) return '0'
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+const getStatusBadgeClass = (color) => {
+  const colorMap = {
+    blue: 'bg-blue-100 text-blue-800',
+    yellow: 'bg-yellow-100 text-yellow-800',
+    orange: 'bg-orange-100 text-orange-800',
+    green: 'bg-green-100 text-green-800',
+    purple: 'bg-purple-100 text-purple-800',
+    red: 'bg-red-100 text-red-800',
+    gray: 'bg-gray-100 text-gray-800'
+  }
+  return colorMap[color] || 'bg-gray-100 text-gray-800'
+}
 
 function isImage(filePath) {
   return /\.(jpg|jpeg|png)$/i.test(filePath);
@@ -518,13 +814,18 @@ watch(selectedOnboardingDetails, async (details) => {
   }
 });
 
+// Watch for tab changes and load corresponding applications
+watch(activeTab, async (newTab) => {
+  await loadApplications(newTab);
+});
+
 onMounted(async () => {
   if (!authStore.isAuthenticated || !['admin', 'loan_officer', 'risk_officer'].includes(authStore.user?.role)) {
     router.push('/login')
     return
   }
   await loadDashboard()
-  await loadOnboardingApplications()
+  await loadApplications()
 })
 </script>
 
