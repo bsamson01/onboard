@@ -78,9 +78,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """Create a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
@@ -203,12 +203,12 @@ async def authenticate_user(session: AsyncSession, email: str, password: str) ->
         if user.failed_login_attempts >= 5:
             user.is_locked = True
         
-        await session.commit()
+        # Let the dependency injection handle the commit
         return None
     
     # Reset failed login attempts on successful login
     user.failed_login_attempts = 0
-    user.last_login = datetime.utcnow()
-    await session.commit()
+    user.last_login = datetime.now()
+    # Let the dependency injection handle the commit
     
     return user

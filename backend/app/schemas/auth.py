@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
-from app.models.user import UserRole
+from app.models.user import UserRole, UserState
 
 
 class Token(BaseModel):
@@ -26,11 +26,24 @@ class UserResponse(BaseModel):
     username: str
     first_name: str
     last_name: str
+    phone_number: Optional[str] = None
     role: UserRole
     is_active: bool
     is_verified: bool
     is_locked: bool
+    failed_login_attempts: int = 0
+    last_login: Optional[datetime] = None
+    password_changed_at: Optional[datetime] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
+    mfa_enabled: bool = False
+    profile_picture_url: Optional[str] = None
+    timezone: str = "UTC"
+    language: str = "en"
+    user_state: UserState = UserState.REGISTERED
+    onboarding_completed_at: Optional[datetime] = None
+    last_profile_update: Optional[datetime] = None
+    profile_expiry_date: Optional[datetime] = None
     
     class Config:
         from_attributes = True
