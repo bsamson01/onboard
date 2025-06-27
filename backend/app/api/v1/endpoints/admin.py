@@ -493,15 +493,12 @@ async def get_staff_dashboard(
     current_user: User = Depends(require_staff),
     session: AsyncSession = Depends(get_async_db)
 ):
-    """Get staff dashboard data (loan officer, risk officer, admin) - includes both onboarding and loan applications."""
+    """Get staff dashboard data (loan officer, risk officer, admin)."""
     try:
         from app.models.onboarding import OnboardingApplication, OnboardingStatus
-        from app.models.loan import LoanApplication, ApplicationStatus
         from sqlalchemy import func
-        
-        # Active applications (both types)
-        # Onboarding active
-        onb_active_count = await session.execute(
+        # Active applications
+        active_count = await session.execute(
             select(func.count(OnboardingApplication.id)).where(
                 OnboardingApplication.status.in_([
                     OnboardingStatus.DRAFT,
@@ -511,76 +508,37 @@ async def get_staff_dashboard(
                 ])
             )
         )
-        # Loan active
-        loan_active_count = await session.execute(
-            select(func.count(LoanApplication.id)).where(
-                LoanApplication.status.in_([
-                    ApplicationStatus.IN_PROGRESS,
-                    ApplicationStatus.SUBMITTED,
-                    ApplicationStatus.UNDER_REVIEW,
-                    ApplicationStatus.AWAITING_DISBURSEMENT
-                ])
-            )
-        )
-        
-        # Approved applications (both types)
-        onb_approved_count = await session.execute(
+        # Approved applications
+        approved_count = await session.execute(
             select(func.count(OnboardingApplication.id)).where(
                 OnboardingApplication.status == OnboardingStatus.APPROVED
             )
         )
-        loan_approved_count = await session.execute(
-            select(func.count(LoanApplication.id)).where(
-                LoanApplication.status == ApplicationStatus.APPROVED
-            )
-        )
-        
-        # Rejected applications (both types)
-        onb_rejected_count = await session.execute(
+        # Rejected applications
+        rejected_count = await session.execute(
             select(func.count(OnboardingApplication.id)).where(
                 OnboardingApplication.status == OnboardingStatus.REJECTED
             )
         )
-        loan_rejected_count = await session.execute(
-            select(func.count(LoanApplication.id)).where(
-                LoanApplication.status == ApplicationStatus.REJECTED
-            )
-        )
-        
-        # Ready for review (onboarding under_review + loan submitted/under_review)
-        onb_ready_count = await session.execute(
+        # Ready for review (under_review)
+        ready_for_review_count = await session.execute(
             select(func.count(OnboardingApplication.id)).where(
                 OnboardingApplication.status == OnboardingStatus.UNDER_REVIEW
             )
         )
-        loan_ready_count = await session.execute(
-            select(func.count(LoanApplication.id)).where(
-                LoanApplication.status.in_([
-                    ApplicationStatus.SUBMITTED,
-                    ApplicationStatus.UNDER_REVIEW
-                ])
-            )
-        )
-        
-        # Cancelled applications (both types)
-        onb_cancelled_count = await session.execute(
+        # Cancelled applications (status = rejected and cancellation_reason is not null)
+        cancelled_count = await session.execute(
             select(func.count(OnboardingApplication.id)).where(
                 OnboardingApplication.status == OnboardingStatus.REJECTED,
                 OnboardingApplication.cancellation_reason.isnot(None)
             )
         )
-        loan_cancelled_count = await session.execute(
-            select(func.count(LoanApplication.id)).where(
-                LoanApplication.status == ApplicationStatus.CANCELLED
-            )
-        )
-        
         dashboard_data = {
-            "active_applications": (onb_active_count.scalar() or 0) + (loan_active_count.scalar() or 0),
-            "approved_applications": (onb_approved_count.scalar() or 0) + (loan_approved_count.scalar() or 0),
-            "rejected_applications": (onb_rejected_count.scalar() or 0) + (loan_rejected_count.scalar() or 0),
-            "ready_for_review_applications": (onb_ready_count.scalar() or 0) + (loan_ready_count.scalar() or 0),
-            "cancelled_applications": (onb_cancelled_count.scalar() or 0) + (loan_cancelled_count.scalar() or 0),
+            "active_applications": active_count.scalar() or 0,
+            "approved_applications": approved_count.scalar() or 0,
+            "rejected_applications": rejected_count.scalar() or 0,
+            "ready_for_review_applications": ready_for_review_count.scalar() or 0,
+            "cancelled_applications": cancelled_count.scalar() or 0,
             "recent_activities": await _get_recent_activities(session),
         }
         return dashboard_data
@@ -769,20 +727,26 @@ async def _get_configuration_status() -> Dict[str, Any]:
 
 async def _check_database_health() -> Dict[str, Any]:
     """Check database health."""
+    gen = get_async_db()
+    session = await gen.__anext__()
     try:
-        async with get_async_db() as session:
-            await session.execute(text("SELECT 1"))
-            return {
-                "status": "healthy",
-                "response_time": "< 10ms",
-                "last_check": datetime.utcnow()
-            }
+        await session.execute(text("SELECT 1"))
+        return {
+            "status": "healthy",
+            "response_time": "< 10ms",
+            "last_check": datetime.utcnow()
+        }
     except Exception as e:
         return {
             "status": "unhealthy",
             "error": str(e),
             "last_check": datetime.utcnow()
         }
+    finally:
+        try:
+            await gen.aclose()
+        except Exception:
+            pass
 
 
 async def _check_external_services() -> Dict[str, Dict[str, Any]]:
