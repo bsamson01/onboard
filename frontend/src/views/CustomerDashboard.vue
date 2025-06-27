@@ -9,7 +9,7 @@
           </div>
           <div class="flex items-center space-x-4">
             <span class="text-sm text-gray-700">Welcome, {{ authStore.user?.first_name }}!</span>
-            <button @click="authStore.logout" class="btn-secondary">Logout</button>
+            <button @click="handleLogout" class="btn-secondary">Logout</button>
           </div>
         </div>
       </div>
@@ -333,6 +333,11 @@ Current Step: ${getStepName(application.current_step)}
   a.click()
   document.body.removeChild(a)
   window.URL.revokeObjectURL(url)
+}
+
+const handleLogout = () => {
+  authStore.logout()
+  router.push('/')
 }
 
 onMounted(() => {

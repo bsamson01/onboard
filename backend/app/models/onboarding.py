@@ -125,9 +125,14 @@ class OnboardingApplication(Base):
     assigned_officer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     review_notes = Column(Text)
     rejection_reason = Column(Text)
+    cancellation_reason = Column(Text)  # For user cancellations
     approved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     approved_at = Column(DateTime(timezone=True))
     rejected_at = Column(DateTime(timezone=True))
+    cancelled_at = Column(DateTime(timezone=True))  # For user cancellations
+    reviewed_at = Column(DateTime(timezone=True))  # When application was reviewed
+    decision_made_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    decision_date = Column(DateTime(timezone=True))
     
     # Timestamps
     submitted_at = Column(DateTime(timezone=True))
@@ -139,6 +144,7 @@ class OnboardingApplication(Base):
     customer = relationship("Customer", back_populates="onboarding_applications")
     assigned_officer = relationship("User", foreign_keys=[assigned_officer_id])
     approved_by = relationship("User", foreign_keys=[approved_by_id])
+    decision_made_by = relationship("User", foreign_keys=[decision_made_by_id])
     steps = relationship("OnboardingStep", back_populates="application", cascade="all, delete-orphan")
     
     def __repr__(self):

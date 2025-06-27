@@ -49,6 +49,7 @@
                 Last login: {{ formatDate(user.last_login) }}
               </span>
               <button 
+                v-if="isAdmin"
                 @click="$emit('delete', user.id)"
                 class="text-red-600 hover:text-red-900 text-sm font-medium"
                 :disabled="user.role === 'admin'"
@@ -84,6 +85,10 @@ const props = defineProps({
   users: {
     type: Array,
     default: () => []
+  },
+  isAdmin: {
+    type: Boolean,
+    default: false
   }
 })
 

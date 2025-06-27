@@ -244,6 +244,18 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **API Docs**: Available at `/docs` when running the backend
 - **Issues**: Create GitHub issues for bugs and feature requests
 
+## Default Test Users
+
+The following test users are automatically created for development and testing:
+
+| Role         | Email                     | Username      | Password            |
+|--------------|---------------------------|--------------|---------------------|
+| Customer     | test@example.com          | testuser     | testpassword123     |
+| Admin        | admin@example.com         | admin        | adminpassword123    |
+| Loan Officer | loan_officer@example.com  | loan_officer | officerpassword123  |
+
+You can use these credentials to log in and test different user roles in the application.
+
 ---
 
 Built with ❤️ for financial inclusion and accessibility. 

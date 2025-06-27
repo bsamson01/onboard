@@ -9,7 +9,7 @@ import logging
 
 from app.database import get_async_db
 from app.models.user import User
-from app.core.auth import require_admin
+from app.core.auth import require_admin, require_loan_officer
 from app.config import settings
 from app.services.scorecard_service import ScorecardService
 from app.services.audit_service import AuditService
@@ -485,6 +485,28 @@ async def unlock_application_for_editing(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to unlock application"
+        )
+
+
+@router.get("/staff/dashboard")
+async def get_staff_dashboard(
+    current_user: User = Depends(require_loan_officer),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Get staff dashboard data (loan officer, risk officer, admin)."""
+    try:
+        # Get staff-appropriate statistics
+        dashboard_data = {
+            "active_applications": await _get_active_applications_count(session),
+            "recent_activities": await _get_recent_activities(session),
+            # Add more staff-appropriate data as needed
+        }
+        return dashboard_data
+    except Exception as e:
+        logger.error(f"Failed to get staff dashboard: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load staff dashboard data"
         )
 
 

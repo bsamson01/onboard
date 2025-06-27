@@ -6,6 +6,7 @@ import OnboardingWizard from '@/views/OnboardingWizard.vue'
 import CustomerDashboard from '@/views/CustomerDashboard.vue'
 import AdminDashboard from '@/views/AdminDashboard.vue'
 import ApplicationReviewPanel from '@/components/admin/ApplicationReviewPanel.vue'
+import StaffDashboard from '@/views/StaffDashboard.vue'
 
 const routes = [
   {
@@ -41,6 +42,12 @@ const routes = [
     name: 'OnboardingWizard',
     component: OnboardingWizard,
     meta: { requiresAuth: true, roles: ['customer'] }
+  },
+  {
+    path: '/staff',
+    name: 'StaffDashboard',
+    component: StaffDashboard,
+    meta: { requiresAuth: true, roles: ['admin', 'loan_officer', 'risk_officer'] }
   }
 ]
 
@@ -50,8 +57,14 @@ const router = createRouter({
 })
 
 // Navigation guard for authentication and role-based access
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+  
+  // If we have a token but no user data, wait for auth check to complete
+  if (authStore.token && !authStore.user && !authStore.isLoading) {
+    await authStore.checkAuth()
+  }
+
   const userRole = authStore.user?.role
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
@@ -60,9 +73,12 @@ router.beforeEach((to, from, next) => {
     if (to.meta.roles.includes(userRole)) {
       next()
     } else {
+      console.log('userRole', userRole)
       // Only redirect if not already on the correct dashboard
-      if ((userRole === 'admin' || userRole === 'loan_officer' || userRole === 'risk_officer') && to.path !== '/admin') {
+      if (userRole === 'admin' && to.path !== '/admin') {
         next('/admin')
+      } else if ((userRole === 'loan_officer' || userRole === 'risk_officer') && to.path !== '/staff') {
+        next('/staff')
       } else if (userRole === 'customer' && to.path !== '/dashboard') {
         next('/dashboard')
       } else {

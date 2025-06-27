@@ -4,11 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, desc
 from typing import List, Optional
 import uuid
+from datetime import datetime
 
 from app.database import get_async_db
 from app.models.user import User
 from app.models.loan import LoanApplication, ApplicationStatus, ApplicationStatusHistory
-from app.models.onboarding import Customer
+from app.models.onboarding import Customer, OnboardingApplication, OnboardingStatus, OnboardingStep
 from app.schemas.status import (
     StatusUpdateRequest, StatusCancelRequest, StatusHistoryResponse,
     ApplicationStatusResponse, ApplicationTimelineResponse, StatusTimelineEntry,
@@ -88,54 +89,108 @@ async def get_application_status(
 ):
     """Get detailed status information for an application"""
     
-    # Get application with related data
-    stmt = select(LoanApplication).where(LoanApplication.id == application_id)
-    result = await session.execute(stmt)
-    application = result.scalar()
+    from app.models.onboarding import OnboardingApplication, OnboardingStatus
     
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
+    # First try to find as loan application
+    loan_stmt = select(LoanApplication).where(LoanApplication.id == application_id)
+    loan_result = await session.execute(loan_stmt)
+    loan_application = loan_result.scalar()
     
-    # Check access permissions
-    if current_user.role.value == "customer":
-        # Verify customer owns this application
-        customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
-        customer_result = await session.execute(customer_stmt)
-        customer = customer_result.scalar()
+    if loan_application:
+        # Handle loan application
+        # Check access permissions
+        if current_user.role.value == "customer":
+            # Verify customer owns this application
+            customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
+            customer_result = await session.execute(customer_stmt)
+            customer = customer_result.scalar()
+            
+            if not customer or str(loan_application.customer_id) != str(customer.id):
+                raise HTTPException(status_code=403, detail="Access denied")
         
-        if not customer or str(application.customer_id) != str(customer.id):
-            raise HTTPException(status_code=403, detail="Access denied")
+        # Get additional user information
+        assigned_officer_name = None
+        decision_made_by_name = None
+        
+        if loan_application.assigned_officer:
+            assigned_officer_name = loan_application.assigned_officer.full_name
+        
+        if loan_application.decision_made_by:
+            decision_made_by_name = loan_application.decision_made_by.full_name
+        
+        status_display = status_service.get_status_display_info(loan_application.status)
+        
+        return ApplicationStatusResponse(
+            application_id=loan_application.id,
+            application_number=loan_application.application_number,
+            status=loan_application.status,
+            status_display=StatusDisplayInfo(**status_display),
+            can_be_cancelled=loan_application.can_be_cancelled_by_customer,
+            rejection_reason=loan_application.rejection_reason,
+            cancellation_reason=loan_application.cancellation_reason,
+            submitted_at=loan_application.submitted_at,
+            reviewed_at=loan_application.reviewed_at,
+            approved_at=loan_application.approved_at,
+            rejected_at=loan_application.rejected_at,
+            cancelled_at=loan_application.cancelled_at,
+            disbursed_at=loan_application.disbursed_at,
+            completed_at=loan_application.completed_at,
+            assigned_officer_name=assigned_officer_name,
+            decision_made_by_name=decision_made_by_name
+        )
     
-    # Get additional user information
-    assigned_officer_name = None
-    decision_made_by_name = None
+    # If not found as loan application, try onboarding application
+    onboarding_stmt = select(OnboardingApplication).where(OnboardingApplication.id == application_id)
+    onboarding_result = await session.execute(onboarding_stmt)
+    onboarding_application = onboarding_result.scalar()
     
-    if application.assigned_officer:
-        assigned_officer_name = application.assigned_officer.full_name
+    if onboarding_application:
+        # Handle onboarding application
+        # Check access permissions
+        if current_user.role.value == "customer":
+            # Verify customer owns this application
+            customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
+            customer_result = await session.execute(customer_stmt)
+            customer = customer_result.scalar()
+            
+            if not customer or str(onboarding_application.customer_id) != str(customer.id):
+                raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Map OnboardingStatus to ApplicationStatus for display
+        status_map = {
+            OnboardingStatus.DRAFT: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.IN_PROGRESS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.PENDING_DOCUMENTS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.UNDER_REVIEW: ApplicationStatus.UNDER_REVIEW,
+            OnboardingStatus.APPROVED: ApplicationStatus.APPROVED,
+            OnboardingStatus.REJECTED: ApplicationStatus.REJECTED,
+            OnboardingStatus.COMPLETED: ApplicationStatus.DONE
+        }
+        
+        mapped_status = status_map.get(onboarding_application.status, ApplicationStatus.IN_PROGRESS)
+        status_display = status_service.get_status_display_info(mapped_status)
+        
+        return ApplicationStatusResponse(
+            application_id=onboarding_application.id,
+            application_number=onboarding_application.application_number,
+            status=mapped_status,
+            status_display=StatusDisplayInfo(**status_display),
+            can_be_cancelled=onboarding_application.status in [OnboardingStatus.UNDER_REVIEW],
+            rejection_reason=onboarding_application.rejection_reason,
+            cancellation_reason=onboarding_application.cancellation_reason,
+            submitted_at=onboarding_application.submitted_at,
+            reviewed_at=onboarding_application.reviewed_at,
+            approved_at=onboarding_application.approved_at,
+            rejected_at=onboarding_application.rejected_at,
+            cancelled_at=onboarding_application.cancelled_at,
+            disbursed_at=None,  # Onboarding apps don't have disbursement
+            completed_at=onboarding_application.completed_at,
+            assigned_officer_name=None,  # Onboarding apps don't have assignment yet
+            decision_made_by_name=None
+        )
     
-    if application.decision_made_by:
-        decision_made_by_name = application.decision_made_by.full_name
-    
-    status_display = status_service.get_status_display_info(application.status)
-    
-    return ApplicationStatusResponse(
-        application_id=application.id,
-        application_number=application.application_number,
-        status=application.status,
-        status_display=StatusDisplayInfo(**status_display),
-        can_be_cancelled=application.can_be_cancelled_by_customer,
-        rejection_reason=application.rejection_reason,
-        cancellation_reason=application.cancellation_reason,
-        submitted_at=application.submitted_at,
-        reviewed_at=application.reviewed_at,
-        approved_at=application.approved_at,
-        rejected_at=application.rejected_at,
-        cancelled_at=application.cancelled_at,
-        disbursed_at=application.disbursed_at,
-        completed_at=application.completed_at,
-        assigned_officer_name=assigned_officer_name,
-        decision_made_by_name=decision_made_by_name
-    )
+    # If neither found
+    raise HTTPException(status_code=404, detail="Application not found")
 
 
 @router.get("/applications/{application_id}/timeline", response_model=ApplicationTimelineResponse)
@@ -144,98 +199,136 @@ async def get_application_timeline(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_db)
 ):
-    """Get application status timeline and history"""
+    """Get application timeline and status history"""
     
-    # Get application
-    stmt = select(LoanApplication).where(LoanApplication.id == application_id)
-    result = await session.execute(stmt)
-    application = result.scalar()
+    from app.models.onboarding import OnboardingApplication, OnboardingStatus, OnboardingStep
     
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
+    # First try to find as loan application
+    loan_stmt = select(LoanApplication).where(LoanApplication.id == application_id)
+    loan_result = await session.execute(loan_stmt)
+    loan_application = loan_result.scalar()
     
-    # Check access permissions
-    if current_user.role.value == "customer":
-        customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
-        customer_result = await session.execute(customer_stmt)
-        customer = customer_result.scalar()
+    if loan_application:
+        # Handle loan application timeline
+        # Check access permissions
+        if current_user.role.value == "customer":
+            customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
+            customer_result = await session.execute(customer_stmt)
+            customer = customer_result.scalar()
+            
+            if not customer or str(loan_application.customer_id) != str(customer.id):
+                raise HTTPException(status_code=403, detail="Access denied")
         
-        if not customer or str(application.customer_id) != str(customer.id):
-            raise HTTPException(status_code=403, detail="Access denied")
-    
-    # Get status history
-    history = await status_service.get_status_history(session, application_id, current_user)
-    
-    # Build timeline
-    timeline_statuses = [
-        ApplicationStatus.IN_PROGRESS,
-        ApplicationStatus.SUBMITTED,
-        ApplicationStatus.UNDER_REVIEW,
-        ApplicationStatus.APPROVED,
-        ApplicationStatus.AWAITING_DISBURSEMENT,
-        ApplicationStatus.DONE
-    ]
-    
-    timeline = []
-    current_status = application.status
-    
-    for status in timeline_statuses:
-        status_display = status_service.get_status_display_info(status)
+        # Get status history
+        history_stmt = select(ApplicationStatusHistory).where(
+            ApplicationStatusHistory.application_id == application_id
+        ).order_by(ApplicationStatusHistory.created_at)
         
-        # Find timestamp for this status
-        timestamp = None
-        if status == ApplicationStatus.IN_PROGRESS:
-            timestamp = application.created_at
-        elif status == ApplicationStatus.SUBMITTED:
-            timestamp = application.submitted_at
-        elif status == ApplicationStatus.UNDER_REVIEW:
-            timestamp = application.reviewed_at
-        elif status == ApplicationStatus.APPROVED:
-            timestamp = application.approved_at
-        elif status == ApplicationStatus.AWAITING_DISBURSEMENT:
-            timestamp = application.approved_at  # Use approval time as proxy
-        elif status == ApplicationStatus.DONE:
-            timestamp = application.completed_at
+        history_result = await session.execute(history_stmt)
+        history_entries = history_result.scalars().all()
         
-        is_current = status == current_status
-        is_completed = timestamp is not None
+        # Build timeline
+        timeline_entries = []
+        for entry in history_entries:
+            from_status_display = status_service.get_status_display_info(entry.from_status)
+            to_status_display = status_service.get_status_display_info(entry.to_status)
+            
+            timeline_entries.append(StatusTimelineEntry(
+                status=entry.to_status,
+                status_display=StatusDisplayInfo(**to_status_display),
+                timestamp=entry.created_at,
+                reason=entry.reason,
+                notes=entry.notes,
+                changed_by_name=entry.changed_by.full_name if entry.changed_by else "System",
+                change_type=entry.change_type.value
+            ))
         
-        # Don't show future steps for rejected/cancelled applications
-        if current_status in [ApplicationStatus.REJECTED, ApplicationStatus.CANCELLED]:
-            if not is_completed and not is_current:
-                continue
-        
-        timeline.append(StatusTimelineEntry(
-            status=status,
-            status_display=StatusDisplayInfo(**status_display),
-            timestamp=timestamp,
-            is_current=is_current,
-            is_completed=is_completed
-        ))
+        return ApplicationTimelineResponse(
+            application_id=loan_application.id,
+            application_number=loan_application.application_number,
+            timeline=timeline_entries
+        )
     
-    # Convert history to response format
-    history_responses = []
-    for entry in history:
-        changed_by_name = entry.changed_by.full_name if entry.changed_by else "System"
-        
-        history_responses.append(StatusHistoryResponse(
-            id=entry.id,
-            from_status=entry.from_status,
-            to_status=entry.to_status,
-            reason=entry.reason,
-            notes=entry.notes,
-            changed_by_id=entry.changed_by_id,
-            changed_by_name=changed_by_name,
-            change_type=entry.change_type,
-            created_at=entry.created_at
-        ))
+    # If not found as loan application, try onboarding application
+    onboarding_stmt = select(OnboardingApplication).where(OnboardingApplication.id == application_id)
+    onboarding_result = await session.execute(onboarding_stmt)
+    onboarding_application = onboarding_result.scalar()
     
-    return ApplicationTimelineResponse(
-        application_id=uuid.UUID(application_id),
-        current_status=current_status,
-        timeline=timeline,
-        history=history_responses
-    )
+    if onboarding_application:
+        # Handle onboarding application timeline
+        # Check access permissions
+        if current_user.role.value == "customer":
+            customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
+            customer_result = await session.execute(customer_stmt)
+            customer = customer_result.scalar()
+            
+            if not customer or str(onboarding_application.customer_id) != str(customer.id):
+                raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get onboarding steps as timeline
+        steps_stmt = select(OnboardingStep).where(
+            OnboardingStep.application_id == application_id
+        ).order_by(OnboardingStep.step_number)
+        
+        steps_result = await session.execute(steps_stmt)
+        steps = steps_result.scalars().all()
+        
+        # Build timeline from steps
+        timeline_entries = []
+        for step in steps:
+            if step.is_completed:
+                # Map step to status for display
+                step_status_map = {
+                    1: ApplicationStatus.IN_PROGRESS,
+                    2: ApplicationStatus.IN_PROGRESS,
+                    3: ApplicationStatus.IN_PROGRESS,
+                    4: ApplicationStatus.IN_PROGRESS,
+                    5: ApplicationStatus.SUBMITTED
+                }
+                
+                status = step_status_map.get(step.step_number, ApplicationStatus.IN_PROGRESS)
+                status_display = status_service.get_status_display_info(status)
+                
+                timeline_entries.append(StatusTimelineEntry(
+                    status=status,
+                    status_display=StatusDisplayInfo(**status_display),
+                    timestamp=step.completed_at,
+                    reason=None,
+                    notes=f"Completed {step.step_name}",
+                    changed_by_name="Customer",
+                    change_type="step_completion"
+                ))
+        
+        # Add final application status if submitted
+        if onboarding_application.status in [OnboardingStatus.UNDER_REVIEW, OnboardingStatus.APPROVED, OnboardingStatus.REJECTED, OnboardingStatus.COMPLETED]:
+            status_map = {
+                OnboardingStatus.UNDER_REVIEW: ApplicationStatus.UNDER_REVIEW,
+                OnboardingStatus.APPROVED: ApplicationStatus.APPROVED,
+                OnboardingStatus.REJECTED: ApplicationStatus.REJECTED,
+                OnboardingStatus.COMPLETED: ApplicationStatus.DONE
+            }
+            
+            mapped_status = status_map.get(onboarding_application.status, ApplicationStatus.IN_PROGRESS)
+            status_display = status_service.get_status_display_info(mapped_status)
+            
+            timeline_entries.append(StatusTimelineEntry(
+                status=mapped_status,
+                status_display=StatusDisplayInfo(**status_display),
+                timestamp=onboarding_application.submitted_at or onboarding_application.updated_at,
+                reason=onboarding_application.rejection_reason or onboarding_application.cancellation_reason,
+                notes=f"Application {onboarding_application.status.value.replace('_', ' ').title()}",
+                changed_by_name="System",
+                change_type="status_change"
+            ))
+        
+        return ApplicationTimelineResponse(
+            application_id=onboarding_application.id,
+            application_number=onboarding_application.application_number,
+            timeline=timeline_entries
+        )
+    
+    # If neither found
+    raise HTTPException(status_code=404, detail="Application not found")
 
 
 @router.get("/applications/{application_id}/allowed-transitions", response_model=AllowedTransitionsResponse)
@@ -246,37 +339,83 @@ async def get_allowed_transitions(
 ):
     """Get allowed status transitions for staff users"""
     
-    # Get application
-    stmt = select(LoanApplication).where(LoanApplication.id == application_id)
-    result = await session.execute(stmt)
-    application = result.scalar()
+    # First try to find as loan application
+    loan_stmt = select(LoanApplication).where(LoanApplication.id == application_id)
+    loan_result = await session.execute(loan_stmt)
+    loan_application = loan_result.scalar()
     
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-    
-    # Get allowed transitions
-    allowed_transitions = await status_service.get_allowed_transitions(
-        application.status, 
-        current_user.role.value
-    )
-    
-    # Build transition info
-    transition_info = {}
-    for status in allowed_transitions:
-        status_display = status_service.get_status_display_info(status)
-        requires_reason = status in status_service.statuses_requiring_reason
+    if loan_application:
+        # Handle loan application
+        # Get allowed transitions
+        allowed_transitions = await status_service.get_allowed_transitions(
+            loan_application.status, 
+            current_user.role.value
+        )
         
-        transition_info[status.value] = {
-            "display": status_display,
-            "requires_reason": requires_reason,
-            "description": f"Transition to {status_display['label']}"
-        }
+        # Build transition info
+        transition_info = {}
+        for status in allowed_transitions:
+            status_display = status_service.get_status_display_info(status)
+            requires_reason = status in status_service.statuses_requiring_reason
+            
+            transition_info[status.value] = {
+                "display": status_display,
+                "requires_reason": requires_reason,
+                "description": f"Transition to {status_display['label']}"
+            }
+        
+        return AllowedTransitionsResponse(
+            current_status=loan_application.status,
+            allowed_transitions=allowed_transitions,
+            transition_info=transition_info
+        )
     
-    return AllowedTransitionsResponse(
-        current_status=application.status,
-        allowed_transitions=allowed_transitions,
-        transition_info=transition_info
-    )
+    # If not found as loan application, try onboarding application
+    onboarding_stmt = select(OnboardingApplication).where(OnboardingApplication.id == application_id)
+    onboarding_result = await session.execute(onboarding_stmt)
+    onboarding_application = onboarding_result.scalar()
+    
+    if onboarding_application:
+        # Handle onboarding application
+        # Map OnboardingStatus to ApplicationStatus for transitions
+        status_map = {
+            OnboardingStatus.DRAFT: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.IN_PROGRESS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.PENDING_DOCUMENTS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.UNDER_REVIEW: ApplicationStatus.UNDER_REVIEW,
+            OnboardingStatus.APPROVED: ApplicationStatus.APPROVED,
+            OnboardingStatus.REJECTED: ApplicationStatus.REJECTED,
+            OnboardingStatus.COMPLETED: ApplicationStatus.DONE
+        }
+        
+        mapped_status = status_map.get(onboarding_application.status, ApplicationStatus.IN_PROGRESS)
+        
+        # Get allowed transitions for mapped status
+        allowed_transitions = await status_service.get_allowed_transitions(
+            mapped_status, 
+            current_user.role.value
+        )
+        
+        # Build transition info
+        transition_info = {}
+        for status in allowed_transitions:
+            status_display = status_service.get_status_display_info(status)
+            requires_reason = status in status_service.statuses_requiring_reason
+            
+            transition_info[status.value] = {
+                "display": status_display,
+                "requires_reason": requires_reason,
+                "description": f"Transition to {status_display['label']}"
+            }
+        
+        return AllowedTransitionsResponse(
+            current_status=mapped_status,
+            allowed_transitions=allowed_transitions,
+            transition_info=transition_info
+        )
+    
+    # If neither found
+    raise HTTPException(status_code=404, detail="Application not found")
 
 
 @router.post("/applications/{application_id}/update-status", response_model=StatusUpdateResponse)
@@ -290,64 +429,177 @@ async def update_application_status(
     """Update application status (staff only)"""
     
     try:
-        # Update status
-        application = await status_service.update_application_status(
-            session=session,
-            application_id=application_id,
-            new_status=status_update.status,
-            user=current_user,
-            reason=status_update.reason,
-            notes=status_update.notes,
-            ip_address=request.client.host,
-            user_agent=request.headers.get("user-agent")
-        )
+        # First try to find as loan application
+        loan_stmt = select(LoanApplication).where(LoanApplication.id == application_id)
+        loan_result = await session.execute(loan_stmt)
+        loan_application = loan_result.scalar()
         
-        # Get the latest status history entry
-        history_stmt = select(ApplicationStatusHistory).where(
-            ApplicationStatusHistory.application_id == application_id
-        ).order_by(desc(ApplicationStatusHistory.created_at)).limit(1)
+        if loan_application:
+            # Handle loan application using existing service
+            application = await status_service.update_application_status(
+                session=session,
+                application_id=application_id,
+                new_status=status_update.status,
+                user=current_user,
+                reason=status_update.reason,
+                notes=status_update.notes,
+                ip_address=request.client.host,
+                user_agent=request.headers.get("user-agent")
+            )
+            
+            # Get the latest status history entry
+            history_stmt = select(ApplicationStatusHistory).where(
+                ApplicationStatusHistory.application_id == application_id
+            ).order_by(desc(ApplicationStatusHistory.created_at)).limit(1)
+            
+            history_result = await session.execute(history_stmt)
+            latest_history = history_result.scalar()
+            
+            # Build response
+            status_display = status_service.get_status_display_info(application.status)
+            
+            app_response = ApplicationStatusResponse(
+                application_id=application.id,
+                application_number=application.application_number,
+                status=application.status,
+                status_display=StatusDisplayInfo(**status_display),
+                can_be_cancelled=application.can_be_cancelled_by_customer,
+                rejection_reason=application.rejection_reason,
+                cancellation_reason=application.cancellation_reason,
+                submitted_at=application.submitted_at,
+                reviewed_at=application.reviewed_at,
+                approved_at=application.approved_at,
+                rejected_at=application.rejected_at,
+                cancelled_at=application.cancelled_at,
+                disbursed_at=application.disbursed_at,
+                completed_at=application.completed_at
+            )
+            
+            history_response = StatusHistoryResponse(
+                id=latest_history.id,
+                from_status=latest_history.from_status,
+                to_status=latest_history.to_status,
+                reason=latest_history.reason,
+                notes=latest_history.notes,
+                changed_by_id=latest_history.changed_by_id,
+                changed_by_name=current_user.full_name,
+                change_type=latest_history.change_type,
+                created_at=latest_history.created_at
+            )
+            
+            return StatusUpdateResponse(
+                success=True,
+                application=app_response,
+                status_history_entry=history_response,
+                message=f"Application status updated to {status_display['label']}"
+            )
         
-        history_result = await session.execute(history_stmt)
-        latest_history = history_result.scalar()
+        # If not found as loan application, try onboarding application
+        onboarding_stmt = select(OnboardingApplication).where(OnboardingApplication.id == application_id)
+        onboarding_result = await session.execute(onboarding_stmt)
+        onboarding_application = onboarding_result.scalar()
         
-        # Build response
-        status_display = status_service.get_status_display_info(application.status)
+        if onboarding_application:
+            # Handle onboarding application
+            # Map ApplicationStatus to OnboardingStatus
+            status_map = {
+                ApplicationStatus.IN_PROGRESS: OnboardingStatus.IN_PROGRESS,
+                ApplicationStatus.SUBMITTED: OnboardingStatus.IN_PROGRESS,
+                ApplicationStatus.UNDER_REVIEW: OnboardingStatus.UNDER_REVIEW,
+                ApplicationStatus.APPROVED: OnboardingStatus.APPROVED,
+                ApplicationStatus.REJECTED: OnboardingStatus.REJECTED,
+                ApplicationStatus.CANCELLED: OnboardingStatus.REJECTED,  # Map to rejected for onboarding
+                ApplicationStatus.DONE: OnboardingStatus.COMPLETED
+            }
+            
+            new_onboarding_status = status_map.get(status_update.status)
+            if not new_onboarding_status:
+                raise HTTPException(status_code=400, detail=f"Status {status_update.status} is not valid for onboarding applications")
+            
+            # Store current status
+            current_status = onboarding_application.status
+            
+            # Skip if status is the same
+            if current_status == new_onboarding_status:
+                # Map back to ApplicationStatus for response
+                reverse_status_map = {v: k for k, v in status_map.items()}
+                mapped_status = reverse_status_map.get(current_status, ApplicationStatus.IN_PROGRESS)
+                status_display = status_service.get_status_display_info(mapped_status)
+                
+                return StatusUpdateResponse(
+                    success=True,
+                    application=ApplicationStatusResponse(
+                        application_id=onboarding_application.id,
+                        application_number=onboarding_application.application_number,
+                        status=mapped_status,
+                        status_display=StatusDisplayInfo(**status_display),
+                        can_be_cancelled=False,
+                        rejection_reason=onboarding_application.rejection_reason,
+                        cancellation_reason=onboarding_application.cancellation_reason,
+                        submitted_at=onboarding_application.submitted_at,
+                        reviewed_at=onboarding_application.reviewed_at,
+                        approved_at=onboarding_application.approved_at,
+                        rejected_at=onboarding_application.rejected_at,
+                        cancelled_at=onboarding_application.cancelled_at,
+                        disbursed_at=None,
+                        completed_at=onboarding_application.completed_at
+                    ),
+                    status_history_entry=None,
+                    message=f"Application status is already {status_display['label']}"
+                )
+            
+            # Update onboarding application status
+            onboarding_application.status = new_onboarding_status
+            
+            # Update specific timestamp fields based on status
+            now = datetime.utcnow()
+            if new_onboarding_status == OnboardingStatus.UNDER_REVIEW:
+                onboarding_application.reviewed_at = now
+                onboarding_application.assigned_officer_id = current_user.id
+            elif new_onboarding_status == OnboardingStatus.APPROVED:
+                onboarding_application.approved_at = now
+                onboarding_application.decision_made_by_id = current_user.id
+                onboarding_application.decision_date = now
+            elif new_onboarding_status == OnboardingStatus.REJECTED:
+                onboarding_application.rejected_at = now
+                onboarding_application.decision_made_by_id = current_user.id
+                onboarding_application.decision_date = now
+                onboarding_application.rejection_reason = status_update.reason
+            elif new_onboarding_status == OnboardingStatus.COMPLETED:
+                onboarding_application.completed_at = now
+            
+            await session.commit()
+            await session.refresh(onboarding_application)
+            
+            # Map back to ApplicationStatus for response
+            reverse_status_map = {v: k for k, v in status_map.items()}
+            mapped_status = reverse_status_map.get(new_onboarding_status, ApplicationStatus.IN_PROGRESS)
+            status_display = status_service.get_status_display_info(mapped_status)
+            
+            return StatusUpdateResponse(
+                success=True,
+                application=ApplicationStatusResponse(
+                    application_id=onboarding_application.id,
+                    application_number=onboarding_application.application_number,
+                    status=mapped_status,
+                    status_display=StatusDisplayInfo(**status_display),
+                    can_be_cancelled=False,
+                    rejection_reason=onboarding_application.rejection_reason,
+                    cancellation_reason=onboarding_application.cancellation_reason,
+                    submitted_at=onboarding_application.submitted_at,
+                    reviewed_at=onboarding_application.reviewed_at,
+                    approved_at=onboarding_application.approved_at,
+                    rejected_at=onboarding_application.rejected_at,
+                    cancelled_at=onboarding_application.cancelled_at,
+                    disbursed_at=None,
+                    completed_at=onboarding_application.completed_at
+                ),
+                status_history_entry=None,  # Onboarding apps don't have status history table
+                message=f"Application status updated to {status_display['label']}"
+            )
         
-        app_response = ApplicationStatusResponse(
-            application_id=application.id,
-            application_number=application.application_number,
-            status=application.status,
-            status_display=StatusDisplayInfo(**status_display),
-            can_be_cancelled=application.can_be_cancelled_by_customer,
-            rejection_reason=application.rejection_reason,
-            cancellation_reason=application.cancellation_reason,
-            submitted_at=application.submitted_at,
-            reviewed_at=application.reviewed_at,
-            approved_at=application.approved_at,
-            rejected_at=application.rejected_at,
-            cancelled_at=application.cancelled_at,
-            disbursed_at=application.disbursed_at,
-            completed_at=application.completed_at
-        )
-        
-        history_response = StatusHistoryResponse(
-            id=latest_history.id,
-            from_status=latest_history.from_status,
-            to_status=latest_history.to_status,
-            reason=latest_history.reason,
-            notes=latest_history.notes,
-            changed_by_id=latest_history.changed_by_id,
-            changed_by_name=current_user.full_name,
-            change_type=latest_history.change_type,
-            created_at=latest_history.created_at
-        )
-        
-        return StatusUpdateResponse(
-            success=True,
-            application=app_response,
-            status_history_entry=history_response,
-            message=f"Application status updated to {status_display['label']}"
-        )
+        # If neither found
+        raise HTTPException(status_code=404, detail="Application not found")
         
     except StatusTransitionError as e:
         raise e
@@ -366,62 +618,125 @@ async def cancel_application(
     """Cancel application (customer action)"""
     
     try:
-        # Cancel application
-        application = await status_service.cancel_application(
-            session=session,
-            application_id=application_id,
-            user=current_user,
-            reason=cancel_request.reason,
-            ip_address=request.client.host,
-            user_agent=request.headers.get("user-agent")
-        )
+        # First try to find as loan application
+        loan_stmt = select(LoanApplication).where(LoanApplication.id == application_id)
+        loan_result = await session.execute(loan_stmt)
+        loan_application = loan_result.scalar()
         
-        # Get the latest status history entry
-        history_stmt = select(ApplicationStatusHistory).where(
-            ApplicationStatusHistory.application_id == application_id
-        ).order_by(desc(ApplicationStatusHistory.created_at)).limit(1)
+        if loan_application:
+            # Handle loan application using existing service
+            application = await status_service.cancel_application(
+                session=session,
+                application_id=application_id,
+                user=current_user,
+                reason=cancel_request.reason,
+                ip_address=request.client.host,
+                user_agent=request.headers.get("user-agent")
+            )
+            
+            # Get the latest status history entry
+            history_stmt = select(ApplicationStatusHistory).where(
+                ApplicationStatusHistory.application_id == application_id
+            ).order_by(desc(ApplicationStatusHistory.created_at)).limit(1)
+            
+            history_result = await session.execute(history_stmt)
+            latest_history = history_result.scalar()
+            
+            # Build response
+            status_display = status_service.get_status_display_info(application.status)
+            
+            app_response = ApplicationStatusResponse(
+                application_id=application.id,
+                application_number=application.application_number,
+                status=application.status,
+                status_display=StatusDisplayInfo(**status_display),
+                can_be_cancelled=application.can_be_cancelled_by_customer,
+                rejection_reason=application.rejection_reason,
+                cancellation_reason=application.cancellation_reason,
+                submitted_at=application.submitted_at,
+                reviewed_at=application.reviewed_at,
+                approved_at=application.approved_at,
+                rejected_at=application.rejected_at,
+                cancelled_at=application.cancelled_at,
+                disbursed_at=application.disbursed_at,
+                completed_at=application.completed_at
+            )
+            
+            history_response = StatusHistoryResponse(
+                id=latest_history.id,
+                from_status=latest_history.from_status,
+                to_status=latest_history.to_status,
+                reason=latest_history.reason,
+                notes=latest_history.notes,
+                changed_by_id=latest_history.changed_by_id,
+                changed_by_name=current_user.full_name,
+                change_type=latest_history.change_type,
+                created_at=latest_history.created_at
+            )
+            
+            return StatusUpdateResponse(
+                success=True,
+                application=app_response,
+                status_history_entry=history_response,
+                message="Application has been cancelled successfully"
+            )
         
-        history_result = await session.execute(history_stmt)
-        latest_history = history_result.scalar()
+        # If not found as loan application, try onboarding application
+        onboarding_stmt = select(OnboardingApplication).where(OnboardingApplication.id == application_id)
+        onboarding_result = await session.execute(onboarding_stmt)
+        onboarding_application = onboarding_result.scalar()
         
-        # Build response
-        status_display = status_service.get_status_display_info(application.status)
+        if onboarding_application:
+            # Handle onboarding application cancellation
+            # Check if user is the customer (via customer relationship)
+            if current_user.role.value == "customer":
+                customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
+                customer_result = await session.execute(customer_stmt)
+                customer = customer_result.scalar()
+                
+                if not customer or str(onboarding_application.customer_id) != str(customer.id):
+                    raise HTTPException(status_code=403, detail="You can only cancel your own applications")
+            
+            # Check if application can be cancelled
+            cancellable_statuses = [OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS, OnboardingStatus.PENDING_DOCUMENTS]
+            if onboarding_application.status not in cancellable_statuses:
+                raise StatusTransitionError(f"Application in status '{onboarding_application.status}' cannot be cancelled")
+            
+            # Update onboarding application status
+            onboarding_application.status = OnboardingStatus.REJECTED
+            onboarding_application.cancellation_reason = cancel_request.reason
+            onboarding_application.cancelled_at = datetime.utcnow()
+            
+            await session.commit()
+            await session.refresh(onboarding_application)
+            
+            # Map to ApplicationStatus for response
+            status_display = status_service.get_status_display_info(ApplicationStatus.CANCELLED)
+            
+            return StatusUpdateResponse(
+                success=True,
+                application=ApplicationStatusResponse(
+                    application_id=onboarding_application.id,
+                    application_number=onboarding_application.application_number,
+                    status=ApplicationStatus.CANCELLED,
+                    status_display=StatusDisplayInfo(**status_display),
+                    can_be_cancelled=False,
+                    rejection_reason=onboarding_application.rejection_reason,
+                    cancellation_reason=onboarding_application.cancellation_reason,
+                    submitted_at=onboarding_application.submitted_at,
+                    reviewed_at=onboarding_application.reviewed_at,
+                    approved_at=onboarding_application.approved_at,
+                    rejected_at=onboarding_application.rejected_at,
+                    cancelled_at=onboarding_application.cancelled_at,
+                    disbursed_at=None,
+                    completed_at=onboarding_application.completed_at
+                ),
+                status_history_entry=None,  # Onboarding apps don't have status history table
+                message="Application has been cancelled successfully"
+            )
         
-        app_response = ApplicationStatusResponse(
-            application_id=application.id,
-            application_number=application.application_number,
-            status=application.status,
-            status_display=StatusDisplayInfo(**status_display),
-            can_be_cancelled=application.can_be_cancelled_by_customer,
-            rejection_reason=application.rejection_reason,
-            cancellation_reason=application.cancellation_reason,
-            submitted_at=application.submitted_at,
-            reviewed_at=application.reviewed_at,
-            approved_at=application.approved_at,
-            rejected_at=application.rejected_at,
-            cancelled_at=application.cancelled_at,
-            disbursed_at=application.disbursed_at,
-            completed_at=application.completed_at
-        )
-        
-        history_response = StatusHistoryResponse(
-            id=latest_history.id,
-            from_status=latest_history.from_status,
-            to_status=latest_history.to_status,
-            reason=latest_history.reason,
-            notes=latest_history.notes,
-            changed_by_id=latest_history.changed_by_id,
-            changed_by_name=current_user.full_name,
-            change_type=latest_history.change_type,
-            created_at=latest_history.created_at
-        )
-        
-        return StatusUpdateResponse(
-            success=True,
-            application=app_response,
-            status_history_entry=history_response,
-            message="Application has been cancelled successfully"
-        )
+        # If neither found
+        raise HTTPException(status_code=404, detail="Application not found")
         
     except StatusTransitionError as e:
         raise e
@@ -440,57 +755,140 @@ async def get_admin_applications_list(
 ):
     """Get applications list for admin/staff users"""
     
-    # Build query
-    stmt = select(LoanApplication)
+    from app.models.onboarding import OnboardingApplication, OnboardingStatus
+    
+    # Build queries for both application types
+    loan_stmt = select(LoanApplication)
+    onboarding_stmt = select(OnboardingApplication)
     
     filters = {}
     
+    # Apply status filter if provided
     if status:
-        stmt = stmt.where(LoanApplication.status == status)
+        # Map ApplicationStatus to OnboardingStatus for onboarding applications
+        onboarding_status_map = {
+            ApplicationStatus.IN_PROGRESS: OnboardingStatus.IN_PROGRESS,
+            ApplicationStatus.UNDER_REVIEW: OnboardingStatus.UNDER_REVIEW,
+            ApplicationStatus.APPROVED: OnboardingStatus.APPROVED,
+            ApplicationStatus.REJECTED: OnboardingStatus.REJECTED,
+            ApplicationStatus.DONE: OnboardingStatus.COMPLETED
+        }
+        
+        loan_stmt = loan_stmt.where(LoanApplication.status == status)
+        if status in onboarding_status_map:
+            onboarding_stmt = onboarding_stmt.where(OnboardingApplication.status == onboarding_status_map[status])
         filters["status"] = status.value
     
+    # Apply assignment filter if requested
     if assigned_to_me:
-        stmt = stmt.where(LoanApplication.assigned_officer_id == current_user.id)
+        loan_stmt = loan_stmt.where(LoanApplication.assigned_officer_id == current_user.id)
+        # Note: Onboarding applications don't have assignment yet, so we'll skip this filter for them
         filters["assigned_to_me"] = True
     
-    # Get total count
-    count_stmt = select(func.count(LoanApplication.id))
-    if status:
-        count_stmt = count_stmt.where(LoanApplication.status == status)
-    if assigned_to_me:
-        count_stmt = count_stmt.where(LoanApplication.assigned_officer_id == current_user.id)
+    # Get total counts
+    loan_count_stmt = select(func.count(LoanApplication.id))
+    onboarding_count_stmt = select(func.count(OnboardingApplication.id))
     
-    count_result = await session.execute(count_stmt)
-    total_count = count_result.scalar()
+    if status:
+        loan_count_stmt = loan_count_stmt.where(LoanApplication.status == status)
+        if status in onboarding_status_map:
+            onboarding_count_stmt = onboarding_count_stmt.where(OnboardingApplication.status == onboarding_status_map[status])
+    
+    if assigned_to_me:
+        loan_count_stmt = loan_count_stmt.where(LoanApplication.assigned_officer_id == current_user.id)
+    
+    loan_count_result = await session.execute(loan_count_stmt)
+    onboarding_count_result = await session.execute(onboarding_count_stmt)
+    total_count = loan_count_result.scalar() + onboarding_count_result.scalar()
     
     # Get pending review count
-    pending_stmt = select(func.count(LoanApplication.id)).where(
+    pending_loan_stmt = select(func.count(LoanApplication.id)).where(
         LoanApplication.status.in_([ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW])
     )
-    pending_result = await session.execute(pending_stmt)
-    pending_review_count = pending_result.scalar()
+    pending_onboarding_stmt = select(func.count(OnboardingApplication.id)).where(
+        OnboardingApplication.status.in_([OnboardingStatus.UNDER_REVIEW])
+    )
+    
+    pending_loan_result = await session.execute(pending_loan_stmt)
+    pending_onboarding_result = await session.execute(pending_onboarding_stmt)
+    pending_review_count = pending_loan_result.scalar() + pending_onboarding_result.scalar()
     
     # Get applications with pagination
-    stmt = stmt.order_by(desc(LoanApplication.updated_at)).limit(limit).offset(offset)
-    result = await session.execute(stmt)
-    applications = result.scalars().all()
+    loan_stmt = loan_stmt.order_by(desc(LoanApplication.updated_at))
+    onboarding_stmt = onboarding_stmt.order_by(desc(OnboardingApplication.updated_at))
     
-    # Convert to response format
-    app_summaries = []
-    for app in applications:
+    # Execute queries
+    loan_result = await session.execute(loan_stmt)
+    onboarding_result = await session.execute(onboarding_stmt)
+    loan_applications = loan_result.scalars().all()
+    onboarding_applications = onboarding_result.scalars().all()
+    
+    # Combine and sort all applications by updated_at
+    all_applications = []
+    
+    # Convert loan applications
+    for app in loan_applications:
         status_display = status_service.get_status_display_info(app.status)
+        all_applications.append({
+            'app': app,
+            'type': 'loan',
+            'updated_at': app.updated_at,
+            'summary': ApplicationSummaryResponse(
+                id=app.id,
+                application_number=app.application_number,
+                status=app.status,
+                status_display=StatusDisplayInfo(**status_display),
+                loan_type=app.loan_type.value,
+                requested_amount=float(app.requested_amount),
+                created_at=app.created_at,
+                submitted_at=app.submitted_at,
+                last_updated=app.updated_at
+            )
+        })
+    
+    # Convert onboarding applications
+    for app in onboarding_applications:
+        # Map OnboardingStatus to ApplicationStatus for display
+        status_map = {
+            OnboardingStatus.DRAFT: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.IN_PROGRESS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.PENDING_DOCUMENTS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.UNDER_REVIEW: ApplicationStatus.UNDER_REVIEW,
+            OnboardingStatus.APPROVED: ApplicationStatus.APPROVED,
+            OnboardingStatus.REJECTED: ApplicationStatus.REJECTED,
+            OnboardingStatus.COMPLETED: ApplicationStatus.DONE
+        }
         
-        app_summaries.append(ApplicationSummaryResponse(
-            id=app.id,
-            application_number=app.application_number,
-            status=app.status,
-            status_display=StatusDisplayInfo(**status_display),
-            loan_type=app.loan_type.value,
-            requested_amount=float(app.requested_amount),
-            created_at=app.created_at,
-            submitted_at=app.submitted_at,
-            last_updated=app.updated_at
-        ))
+        mapped_status = status_map.get(app.status, ApplicationStatus.IN_PROGRESS)
+        status_display = status_service.get_status_display_info(mapped_status)
+        
+        all_applications.append({
+            'app': app,
+            'type': 'onboarding',
+            'updated_at': app.updated_at,
+            'summary': ApplicationSummaryResponse(
+                id=app.id,
+                application_number=app.application_number,
+                status=mapped_status,
+                status_display=StatusDisplayInfo(**status_display),
+                loan_type="Onboarding",  # Placeholder for onboarding applications
+                requested_amount=0.0,  # Onboarding apps don't have amounts yet
+                created_at=app.created_at,
+                submitted_at=app.submitted_at,
+                last_updated=app.updated_at
+            )
+        })
+    
+    # Sort by updated_at descending and apply pagination
+    all_applications.sort(key=lambda x: x['updated_at'], reverse=True)
+    
+    # Apply pagination
+    start_idx = offset
+    end_idx = start_idx + limit
+    paginated_applications = all_applications[start_idx:end_idx]
+    
+    # Extract summaries
+    app_summaries = [item['summary'] for item in paginated_applications]
     
     return AdminApplicationsListResponse(
         applications=app_summaries,
@@ -507,33 +905,74 @@ async def get_status_statistics(
 ):
     """Get application status statistics for admin dashboard"""
     
-    # Total applications
-    total_stmt = select(func.count(LoanApplication.id))
-    total_result = await session.execute(total_stmt)
-    total_applications = total_result.scalar()
+    from app.models.onboarding import OnboardingApplication, OnboardingStatus
     
-    # By status
+    # Total applications (both types)
+    loan_total_stmt = select(func.count(LoanApplication.id))
+    onboarding_total_stmt = select(func.count(OnboardingApplication.id))
+    
+    loan_total_result = await session.execute(loan_total_stmt)
+    onboarding_total_result = await session.execute(onboarding_total_stmt)
+    total_applications = loan_total_result.scalar() + onboarding_total_result.scalar()
+    
+    # By status (combine both application types)
     by_status = {}
     for status in ApplicationStatus:
-        status_stmt = select(func.count(LoanApplication.id)).where(LoanApplication.status == status)
-        status_result = await session.execute(status_stmt)
-        by_status[status.value] = status_result.scalar()
+        loan_status_stmt = select(func.count(LoanApplication.id)).where(LoanApplication.status == status)
+        loan_status_result = await session.execute(loan_status_stmt)
+        loan_count = loan_status_result.scalar()
+        
+        # Map ApplicationStatus to OnboardingStatus for onboarding applications
+        onboarding_status_map = {
+            ApplicationStatus.IN_PROGRESS: OnboardingStatus.IN_PROGRESS,
+            ApplicationStatus.UNDER_REVIEW: OnboardingStatus.UNDER_REVIEW,
+            ApplicationStatus.APPROVED: OnboardingStatus.APPROVED,
+            ApplicationStatus.REJECTED: OnboardingStatus.REJECTED,
+            ApplicationStatus.DONE: OnboardingStatus.COMPLETED
+        }
+        
+        onboarding_count = 0
+        if status in onboarding_status_map:
+            onboarding_status_stmt = select(func.count(OnboardingApplication.id)).where(
+                OnboardingApplication.status == onboarding_status_map[status]
+            )
+            onboarding_status_result = await session.execute(onboarding_status_stmt)
+            onboarding_count = onboarding_status_result.scalar()
+        
+        by_status[status.value] = loan_count + onboarding_count
     
-    # Pending review
-    pending_review = by_status.get("submitted", 0) + by_status.get("under_review", 0)
+    # Pending review (both types)
+    pending_loan_stmt = select(func.count(LoanApplication.id)).where(
+        LoanApplication.status.in_([ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW])
+    )
+    pending_onboarding_stmt = select(func.count(OnboardingApplication.id)).where(
+        OnboardingApplication.status.in_([OnboardingStatus.UNDER_REVIEW])
+    )
+    
+    pending_loan_result = await session.execute(pending_loan_stmt)
+    pending_onboarding_result = await session.execute(pending_onboarding_stmt)
+    pending_review = pending_loan_result.scalar() + pending_onboarding_result.scalar()
     
     # Processing time and completion rate (simplified calculations)
-    completed_statuses = [ApplicationStatus.DONE, ApplicationStatus.REJECTED, ApplicationStatus.CANCELLED]
-    completed_stmt = select(LoanApplication).where(LoanApplication.status.in_(completed_statuses))
-    completed_result = await session.execute(completed_stmt)
-    completed_apps = completed_result.scalars().all()
+    completed_loan_statuses = [ApplicationStatus.DONE, ApplicationStatus.REJECTED, ApplicationStatus.CANCELLED]
+    completed_onboarding_statuses = [OnboardingStatus.COMPLETED, OnboardingStatus.REJECTED]
     
-    if completed_apps:
+    completed_loan_stmt = select(LoanApplication).where(LoanApplication.status.in_(completed_loan_statuses))
+    completed_onboarding_stmt = select(OnboardingApplication).where(OnboardingApplication.status.in_(completed_onboarding_statuses))
+    
+    completed_loan_result = await session.execute(completed_loan_stmt)
+    completed_onboarding_result = await session.execute(completed_onboarding_stmt)
+    completed_loan_apps = completed_loan_result.scalars().all()
+    completed_onboarding_apps = completed_onboarding_result.scalars().all()
+    
+    all_completed_apps = list(completed_loan_apps) + list(completed_onboarding_apps)
+    
+    if all_completed_apps:
         total_processing_time = 0
         completed_count = 0
         
-        for app in completed_apps:
-            if app.submitted_at and app.completed_at:
+        for app in all_completed_apps:
+            if hasattr(app, 'submitted_at') and hasattr(app, 'completed_at') and app.submitted_at and app.completed_at:
                 processing_time = (app.completed_at - app.submitted_at).days
                 total_processing_time += processing_time
                 completed_count += 1

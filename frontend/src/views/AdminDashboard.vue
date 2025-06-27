@@ -7,7 +7,7 @@
           <h1 class="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
           <div class="flex items-center space-x-4">
             <span class="text-sm text-gray-500">Welcome, {{ authStore.user?.first_name }}</span>
-            <button @click="authStore.logout" class="btn-secondary">Logout</button>
+            <button @click="handleLogout" class="btn-secondary">Logout</button>
           </div>
         </div>
       </div>
@@ -112,7 +112,8 @@
                 </div>
               </div>
               
-              <div class="mt-6">
+              <!-- Quick Actions -->
+              <div class="mt-6" v-if="authStore.user && authStore.user.role !== 'customer'">
                 <h4 class="text-sm font-medium text-gray-900 mb-3">Quick Actions</h4>
                 <div class="flex space-x-4">
                   <button 
@@ -133,12 +134,12 @@
           </div>
 
           <!-- Users Tab -->
-          <div v-if="activeTab === 'users'" class="space-y-6">
-            <UsersPanel :users="users" @refresh="loadUsers" @delete="deleteUser" />
+          <div v-if="isAdmin && activeTab === 'users'" class="space-y-6">
+            <UsersPanel :users="users" :isAdmin="isAdmin" @refresh="loadUsers" @delete="deleteUser" />
           </div>
 
           <!-- Audit Logs Tab -->
-          <div v-if="activeTab === 'logs'" class="space-y-6">
+          <div v-if="isAdmin && activeTab === 'logs'" class="space-y-6">
             <AuditLogsPanel :logs="auditLogs" @refresh="loadAuditLogs" />
           </div>
         </div>
@@ -147,7 +148,7 @@
 
     <!-- Configuration Modal -->
     <ServiceConfigModal
-      v-if="showConfigModal"
+      v-if="isAdmin && showConfigModal"
       :service="selectedService"
       @close="showConfigModal = false"
       @save="saveConfiguration"
@@ -261,13 +262,17 @@ const externalServicesStatusClass = computed(() => {
   }
 })
 
+const isAdmin = computed(() => authStore.user?.role === 'admin')
+
 const tabs = [
   { id: 'health', name: 'System Health' },
   { id: 'services', name: 'External Services' },
   { id: 'applications', name: 'Applications' },
-  { id: 'users', name: 'Users' },
-  { id: 'logs', name: 'Audit Logs' }
 ]
+if (isAdmin.value) {
+  tabs.push({ id: 'users', name: 'Users' })
+  tabs.push({ id: 'logs', name: 'Audit Logs' })
+}
 
 // Methods
 const loadDashboard = async () => {
@@ -390,6 +395,11 @@ const navigateToApplications = (status = null) => {
   } else {
     router.push('/applications')
   }
+}
+
+const handleLogout = () => {
+  authStore.logout()
+  router.push('/')
 }
 
 // Check authentication and authorization

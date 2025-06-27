@@ -5,6 +5,7 @@ import api from '@/services/api'
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token'))
   const user = ref(null)
+  const isLoading = ref(false)
   
   const isAuthenticated = computed(() => !!token.value)
   
@@ -32,17 +33,22 @@ export const useAuthStore = defineStore('auth', () => {
   const checkAuth = async () => {
     if (!token.value) return
     
+    isLoading.value = true
     try {
       const response = await api.get('/auth/me')
       user.value = response.data
+      console.log('user.value', user.value)
     } catch (error) {
       logout()
+    } finally {
+      isLoading.value = false
     }
   }
   
   return {
     token,
     user,
+    isLoading,
     isAuthenticated,
     login,
     logout,
