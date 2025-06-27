@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  scorecard:
+    build: .
+    container_name: microfinance_scorecard
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=development
+      - SCORECARD_API_KEY=default_scorecard_key_2024
+      - PYTHONPATH=/app
+    volumes:
+      - ./app:/app/app:ro  # Mount for development
+    networks:
+      - microfinance_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  microfinance_network:
+    external: true
