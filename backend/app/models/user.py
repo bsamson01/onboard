@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
 import uuid
+from datetime import datetime, timedelta
 from app.database import Base, UUID, JSONB
 
 
@@ -12,6 +13,12 @@ class UserRole(str, Enum):
     LOAN_OFFICER = "loan_officer"
     SUPPORT = "support"
     CUSTOMER = "customer"
+
+
+class UserState(str, Enum):
+    REGISTERED = "registered"
+    ONBOARDED = "onboarded"
+    OUTDATED = "outdated"
 
 
 class User(Base):
@@ -43,6 +50,12 @@ class User(Base):
     profile_picture_url = Column(String(500))
     timezone = Column(String(50), default="UTC")
     language = Column(String(10), default="en")
+    
+    # User State Management
+    user_state = Column(SQLEnum(UserState), nullable=False, default=UserState.REGISTERED)
+    onboarding_completed_at = Column(DateTime(timezone=True))
+    last_profile_update = Column(DateTime(timezone=True))
+    profile_expiry_date = Column(DateTime(timezone=True))
     
     # Relationships
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
@@ -86,6 +99,35 @@ class User(Base):
     @property
     def can_access_loans(self) -> bool:
         return self.role in [UserRole.ADMIN, UserRole.RISK_OFFICER, UserRole.LOAN_OFFICER]
+    
+    @property
+    def can_create_loans(self) -> bool:
+        """Check if user can create new loan applications."""
+        if self.role != UserRole.CUSTOMER:
+            return False
+        return self.user_state == UserState.ONBOARDED
+    
+    @property
+    def needs_profile_update(self) -> bool:
+        """Check if user profile needs to be updated."""
+        if not self.profile_expiry_date:
+            return False
+        return datetime.utcnow() > self.profile_expiry_date
+    
+    @property
+    def is_profile_outdated(self) -> bool:
+        """Check if user profile is outdated (more than 1 year old)."""
+        return self.user_state == UserState.OUTDATED
+    
+    @property
+    def profile_completion_percentage(self) -> float:
+        """Calculate profile completion percentage."""
+        if self.user_state == UserState.REGISTERED:
+            return 0.0
+        elif self.user_state == UserState.ONBOARDED:
+            return 100.0
+        else:  # OUTDATED
+            return 50.0  # Profile exists but needs updating
 
 
 class UserSession(Base):
@@ -134,3 +176,22 @@ class AuditLog(Base):
     __table_args__ = (
         {"comment": "Immutable audit log for all system changes"},
     )
+
+
+class UserRoleHistory(Base):
+    __tablename__ = "user_role_history"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    old_role = Column(String(50))
+    new_role = Column(String(50), nullable=False)
+    changed_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    reason = Column(Text)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    changed_by = relationship("User", foreign_keys=[changed_by_id])
+    
+    def __repr__(self):
+        return f"<UserRoleHistory(id={self.id}, user_id={self.user_id}, old_role={self.old_role}, new_role={self.new_role})>"

@@ -210,6 +210,7 @@ class Document(Base):
     # Expiry Information
     expires_at = Column(Date)
     expiry_reminder_sent = Column(Boolean, default=False)
+    last_reminder_sent = Column(DateTime(timezone=True))
     
     # Timestamps
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
