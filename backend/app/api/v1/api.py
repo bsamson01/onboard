@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, customers, onboarding, loans, alerts, admin, status
+from app.api.v1.endpoints import auth, users, customers, onboarding, loans, alerts, admin, status, profile
 
 api_router = APIRouter()
 
@@ -16,6 +16,13 @@ api_router.include_router(
     users.router, 
     prefix="/users", 
     tags=["Users"]
+)
+
+# Profile management routes
+api_router.include_router(
+    profile.router, 
+    prefix="/profile", 
+    tags=["Profile"]
 )
 
 # Customer management routes
