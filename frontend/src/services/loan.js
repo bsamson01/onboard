@@ -2,8 +2,12 @@ import api from './api'
 
 export const loanService = {
   // Eligibility checking
-  async checkEligibility() {
-    const response = await api.post('/loans/eligibility-check')
+  async checkEligibility(applicationId) {
+    let url = '/loans/eligibility-check'
+    if (applicationId) {
+      url += `?application_id=${applicationId}`
+    }
+    const response = await api.post(url)
     return response.data
   },
 

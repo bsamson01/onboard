@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
+from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status, Path
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc
+from sqlalchemy import select, and_, or_, desc, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -47,7 +47,6 @@ async def verify_onboarding_complete(customer: Customer, session: AsyncSession) 
     )
     result = await session.execute(stmt)
     onboarding_app = result.scalar()
-    
     if not onboarding_app:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
@@ -55,7 +54,7 @@ async def verify_onboarding_complete(customer: Customer, session: AsyncSession) 
         )
 
 
-async def check_active_loan_applications(customer: Customer, session: AsyncSession) -> None:
+async def check_active_loan_applications(customer: Customer, session: AsyncSession, exclude_application_id: Optional[uuid.UUID] = None) -> None:
     """Check if customer has any active loan applications"""
     active_statuses = [
         ApplicationStatus.IN_PROGRESS, 
@@ -63,13 +62,13 @@ async def check_active_loan_applications(customer: Customer, session: AsyncSessi
         ApplicationStatus.UNDER_REVIEW,
         ApplicationStatus.AWAITING_DISBURSEMENT
     ]
-    
-    stmt = select(LoanApplication).where(
-        and_(
-            LoanApplication.customer_id == customer.id,
-            LoanApplication.status.in_(active_statuses)
-        )
-    )
+    conditions = [
+        LoanApplication.customer_id == customer.id,
+        LoanApplication.status.in_(active_statuses)
+    ]
+    if exclude_application_id:
+        conditions.append(func.replace(LoanApplication.id, '-', '') != exclude_application_id.hex)
+    stmt = select(LoanApplication).where(and_(*conditions))
     result = await session.execute(stmt)
     active_app = result.scalar()
     
@@ -88,48 +87,65 @@ async def get_loan_application_for_user(
 ) -> LoanApplication:
     """Get loan application that belongs to the current user"""
     customer = await get_customer_for_user(user, session)
-    
+    print(f"DEBUG: application_id={application_id}, user_id={user.id}, customer_id={customer.id}")
+    # Normalize UUID for SQLite (remove dashes)
     stmt = select(LoanApplication).options(
         selectinload(LoanApplication.credit_scores),
         selectinload(LoanApplication.decisions),
         selectinload(LoanApplication.customer)
     ).where(
         and_(
-            LoanApplication.id == application_id,
+            func.replace(LoanApplication.id, '-', '') == application_id.hex,
             LoanApplication.customer_id == customer.id
         )
     )
-    
     result = await session.execute(stmt)
     application = result.scalar()
-    
     if not application:
+        print(f"DEBUG: No application found for application_id={application_id} and customer_id={customer.id}")
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Loan application not found."
         )
-    
     return application
 
 
 @router.post("/eligibility-check", response_model=LoanEligibilityCheckResponse)
 async def check_loan_eligibility(
+    application_id: Optional[uuid.UUID] = None,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_db)
 ):
-    """Check if user is eligible to apply for a loan"""
+    """Check if user is eligible to apply for or update a loan application"""
     try:
         customer = await get_customer_for_user(current_user, session)
         await verify_onboarding_complete(customer, session)
-        await check_active_loan_applications(customer, session)
-        
+        if application_id:
+            application = await get_loan_application_for_user(application_id, current_user, session)
+            await check_active_loan_applications(customer, session, exclude_application_id=application_id)
+            # Allow update if not in a terminal state
+            editable_statuses = [
+                ApplicationStatus.IN_PROGRESS,
+                ApplicationStatus.SUBMITTED,
+                ApplicationStatus.UNDER_REVIEW,
+                ApplicationStatus.AWAITING_DISBURSEMENT
+            ]
+            if application.status not in editable_statuses:
+                return LoanEligibilityCheckResponse(
+                    is_eligible=False,
+                    eligibility_reasons=[f"Application is not in a modifiable state: {application.status.value}"],
+                    max_loan_amount=None,
+                    recommended_loan_types=[],
+                    requirements=["Application must not be cancelled, rejected, or completed to update"]
+                )
+        else:
+            await check_active_loan_applications(customer, session)
         # Basic eligibility check
         eligibility_reasons = ["Onboarding completed", "No active loan applications"]
         is_eligible = True
         max_loan_amount = 50000  # Basic default
         recommended_loan_types = ["personal", "business", "emergency"]
         requirements = []
-        
         return LoanEligibilityCheckResponse(
             is_eligible=is_eligible,
             eligibility_reasons=eligibility_reasons,
@@ -137,11 +153,11 @@ async def check_loan_eligibility(
             recommended_loan_types=recommended_loan_types,
             requirements=requirements
         )
-        
-    except HTTPException:
+    except HTTPException as exc:
+        print('HTTPException', exc.detail)
         return LoanEligibilityCheckResponse(
             is_eligible=False,
-            eligibility_reasons=["Must complete onboarding first", "Cannot have active loan applications"],
+            eligibility_reasons=[str(exc.detail)],
             max_loan_amount=None,
             recommended_loan_types=[],
             requirements=["Complete customer onboarding", "Resolve any pending applications"]
@@ -238,10 +254,30 @@ async def get_loan_applications(
     result = await session.execute(query)
     applications = result.scalars().all()
     
+    # Prepare applications with required nested fields
+    def get_latest(items, date_attr):
+        return max(items, key=lambda x: getattr(x, date_attr)) if items else None
+
+    serialized_applications = []
+    for app in applications:
+        latest_score = get_latest(app.credit_scores, 'scored_at')
+        latest_decision = get_latest(app.decisions, 'decision_date')
+        app_dict = app.__dict__.copy()
+        app_dict['latest_credit_score'] = CreditScoreResponse.model_validate(latest_score) if latest_score else None
+        app_dict['latest_decision'] = LoanDecisionResponse.model_validate(latest_decision) if latest_decision else None
+        # Add computed properties
+        app_dict['is_approved'] = app.is_approved
+        app_dict['is_rejected'] = app.is_rejected
+        app_dict['is_cancelled'] = app.is_cancelled
+        app_dict['is_active'] = app.is_active
+        app_dict['is_completed'] = app.is_completed
+        app_dict['can_be_cancelled_by_customer'] = app.can_be_cancelled_by_customer
+        serialized_applications.append(LoanApplicationResponse.model_validate(app_dict))
+
     pages = (total + size - 1) // size
     
     return LoanApplicationListResponse(
-        applications=applications,
+        applications=serialized_applications,
         total=total,
         page=page,
         size=size,
@@ -255,9 +291,25 @@ async def get_loan_application(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_db)
 ):
+    print('get_loan_application', application_id)
     """Get a specific loan application"""
     application = await get_loan_application_for_user(application_id, current_user, session)
-    return application
+    # Prepare nested fields and computed properties as in the list endpoint
+    def get_latest(items, date_attr):
+        return max(items, key=lambda x: getattr(x, date_attr)) if items else None
+    from app.schemas.loan import CreditScoreResponse, LoanDecisionResponse, LoanApplicationResponse
+    latest_score = get_latest(application.credit_scores, 'scored_at')
+    latest_decision = get_latest(application.decisions, 'decision_date')
+    app_dict = application.__dict__.copy()
+    app_dict['latest_credit_score'] = CreditScoreResponse.model_validate(latest_score) if latest_score else None
+    app_dict['latest_decision'] = LoanDecisionResponse.model_validate(latest_decision) if latest_decision else None
+    app_dict['is_approved'] = application.is_approved
+    app_dict['is_rejected'] = application.is_rejected
+    app_dict['is_cancelled'] = application.is_cancelled
+    app_dict['is_active'] = application.is_active
+    app_dict['is_completed'] = application.is_completed
+    app_dict['can_be_cancelled_by_customer'] = application.can_be_cancelled_by_customer
+    return LoanApplicationResponse.model_validate(app_dict)
 
 
 @router.put("/applications/{application_id}", response_model=LoanApplicationResponse)
@@ -269,26 +321,36 @@ async def update_loan_application(
 ):
     """Update a loan application (only allowed if in progress)"""
     application = await get_loan_application_for_user(application_id, current_user, session)
-    
     # Check if application can be updated
     if application.status != ApplicationStatus.IN_PROGRESS:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Loan application can only be updated while in progress."
         )
-    
     # Update fields
     update_data = loan_data.dict(exclude_unset=True)
     for field, value in update_data.items():
         if hasattr(application, field):
             setattr(application, field, value)
-    
     application.updated_at = datetime.now(timezone.utc)
-    
     await session.commit()
     await session.refresh(application)
-    
-    return application
+    # Serialize as in get_loan_application
+    def get_latest(items, date_attr):
+        return max(items, key=lambda x: getattr(x, date_attr)) if items else None
+    from app.schemas.loan import CreditScoreResponse, LoanDecisionResponse, LoanApplicationResponse
+    latest_score = get_latest(application.credit_scores, 'scored_at')
+    latest_decision = get_latest(application.decisions, 'decision_date')
+    app_dict = application.__dict__.copy()
+    app_dict['latest_credit_score'] = CreditScoreResponse.model_validate(latest_score) if latest_score else None
+    app_dict['latest_decision'] = LoanDecisionResponse.model_validate(latest_decision) if latest_decision else None
+    app_dict['is_approved'] = application.is_approved
+    app_dict['is_rejected'] = application.is_rejected
+    app_dict['is_cancelled'] = application.is_cancelled
+    app_dict['is_active'] = application.is_active
+    app_dict['is_completed'] = application.is_completed
+    app_dict['can_be_cancelled_by_customer'] = application.can_be_cancelled_by_customer
+    return LoanApplicationResponse.model_validate(app_dict)
 
 
 @router.post("/applications/{application_id}/submit", response_model=LoanApplicationSubmitResponse)
@@ -300,31 +362,41 @@ async def submit_loan_application(
 ):
     """Submit loan application for review"""
     application = await get_loan_application_for_user(application_id, current_user, session)
-    
     # Check if application can be submitted
     if application.status != ApplicationStatus.IN_PROGRESS:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Only applications in progress can be submitted."
         )
-    
     # Update application status
     application.status = ApplicationStatus.SUBMITTED
     application.submitted_at = datetime.now(timezone.utc)
-    
     await session.commit()
     await session.refresh(application)
-    
+    # Serialize as in get_loan_application
+    def get_latest(items, date_attr):
+        return max(items, key=lambda x: getattr(x, date_attr)) if items else None
+    from app.schemas.loan import CreditScoreResponse, LoanDecisionResponse, LoanApplicationResponse
+    latest_score = get_latest(application.credit_scores, 'scored_at')
+    latest_decision = get_latest(application.decisions, 'decision_date')
+    app_dict = application.__dict__.copy()
+    app_dict['latest_credit_score'] = CreditScoreResponse.model_validate(latest_score) if latest_score else None
+    app_dict['latest_decision'] = LoanDecisionResponse.model_validate(latest_decision) if latest_decision else None
+    app_dict['is_approved'] = application.is_approved
+    app_dict['is_rejected'] = application.is_rejected
+    app_dict['is_cancelled'] = application.is_cancelled
+    app_dict['is_active'] = application.is_active
+    app_dict['is_completed'] = application.is_completed
+    app_dict['can_be_cancelled_by_customer'] = application.can_be_cancelled_by_customer
     next_steps = [
         "Your application has been submitted for review",
         "Our team will review your application within 2-3 business days",
         "You will be notified of the decision via email and SMS",
         "If approved, loan disbursement will be processed within 1-2 business days"
     ]
-    
     return LoanApplicationSubmitResponse(
         message="Loan application submitted successfully",
-        application=application,
+        application=LoanApplicationResponse.model_validate(app_dict),
         next_steps=next_steps
     )
 

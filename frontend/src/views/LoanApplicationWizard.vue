@@ -309,7 +309,9 @@ watch(formData, () => {
 const checkEligibility = async () => {
   try {
     isLoadingEligibility.value = true
-    eligibilityInfo.value = await loanService.checkEligibility()
+    // Pass application id if editing
+    const appId = route.query.app || (application.value && application.value.id)
+    eligibilityInfo.value = await loanService.checkEligibility(appId)
   } catch (err) {
     console.error('Eligibility check failed:', err)
     error.value = loanService.handleApiError(err)
@@ -327,7 +329,6 @@ const loadExistingApplication = async () => {
   if (applicationId) {
     try {
       application.value = await loanService.getLoanApplication(applicationId)
-      
       // Populate form with existing data
       formData.value = {
         loan_type: application.value.loan_type,
@@ -336,6 +337,8 @@ const loadExistingApplication = async () => {
         loan_purpose: application.value.loan_purpose,
         additional_notes: application.value.internal_notes?.customer_notes || ''
       }
+      // Re-check eligibility with app id after loading
+      await checkEligibility()
     } catch (err) {
       console.error('Failed to load application:', err)
       error.value = loanService.handleApiError(err)
@@ -417,9 +420,11 @@ const goBack = () => {
 
 // Lifecycle
 onMounted(async () => {
-  await checkEligibility()
-  if (isEligible.value) {
+  // If editing, load app first, then check eligibility with app id
+  if (route.query.app) {
     await loadExistingApplication()
+  } else {
+    await checkEligibility()
   }
 })
 </script>

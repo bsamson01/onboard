@@ -154,7 +154,7 @@ class LoanApplicationSubmitResponse(BaseModel):
 
 
 class LoanDecisionCreate(BaseModel):
-    decision: str = Field(..., regex="^(approved|rejected|pending)$")
+    decision: str = Field(..., pattern="^(approved|rejected|pending)$")
     decision_reason: Optional[str] = None
     recommended_amount: Optional[Decimal] = Field(None, gt=0)
     recommended_term_months: Optional[int] = Field(None, ge=6, le=60)
@@ -196,7 +196,7 @@ class LoanEligibilityCheckResponse(BaseModel):
 # Request/Response for bulk operations
 class BulkLoanApplicationsRequest(BaseModel):
     application_ids: List[uuid.UUID]
-    action: str = Field(..., regex="^(assign|unassign|bulk_approve|bulk_reject)$")
+    action: str = Field(..., pattern="^(assign|unassign|bulk_approve|bulk_reject)$")
     officer_id: Optional[uuid.UUID] = None
     reason: Optional[str] = None
 

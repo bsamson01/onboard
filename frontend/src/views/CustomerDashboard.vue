@@ -93,7 +93,10 @@
         <!-- Application Lists -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <!-- Onboarding Applications -->
-          <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div
+            v-if="!hasCompletedOnboarding"
+            class="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+          >
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-lg font-semibold text-gray-900">Onboarding Status</h3>
               <span v-if="onboardingApplications.length" :class="getStatusBadgeClass(onboardingApplications[0].status)">
@@ -166,7 +169,10 @@
           </div>
           
           <!-- Loan Applications -->
-          <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div
+            v-if="hasCompletedOnboarding"
+            class="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+          >
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-lg font-semibold text-gray-900">Loan Applications</h3>
               <button

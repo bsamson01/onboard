@@ -61,18 +61,18 @@ async def get_admin_dashboard(
 ):
     """Get admin dashboard data."""
     try:
-        # Get system statistics
         dashboard_data = {
             "system_status": "operational",
             "total_users": await _get_user_count(session),
             "active_applications": await _get_active_applications_count(session),
+            "pending_review_count": await _get_pending_review_count(session),
+            "approved_count": await _get_approved_count(session),
+            "rejected_count": await _get_rejected_count(session),
             "recent_activities": await _get_recent_activities(session),
             "system_health": await _get_system_health_summary(),
             "configuration_status": await _get_configuration_status()
         }
-        
         return dashboard_data
-        
     except Exception as e:
         logger.error(f"Failed to get admin dashboard: {str(e)}")
         raise HTTPException(
@@ -622,6 +622,30 @@ async def _get_active_applications_count(session: AsyncSession) -> int:
     """Get active applications count."""
     try:
         result = await session.execute(text("SELECT COUNT(*) FROM onboarding_applications WHERE UPPER(status) IN ('DRAFT', 'IN_PROGRESS', 'UNDER_REVIEW')"))
+        return result.scalar() or 0
+    except:
+        return 0
+
+
+async def _get_pending_review_count(session: AsyncSession) -> int:
+    try:
+        result = await session.execute(text("SELECT COUNT(*) FROM onboarding_applications WHERE UPPER(status) = 'UNDER_REVIEW'"))
+        return result.scalar() or 0
+    except:
+        return 0
+
+
+async def _get_approved_count(session: AsyncSession) -> int:
+    try:
+        result = await session.execute(text("SELECT COUNT(*) FROM onboarding_applications WHERE UPPER(status) = 'APPROVED'"))
+        return result.scalar() or 0
+    except:
+        return 0
+
+
+async def _get_rejected_count(session: AsyncSession) -> int:
+    try:
+        result = await session.execute(text("SELECT COUNT(*) FROM onboarding_applications WHERE UPPER(status) = 'REJECTED'"))
         return result.scalar() or 0
     except:
         return 0
