@@ -12,7 +12,7 @@
           <div class="flex space-x-4">
             <!-- Status Filter -->
             <select v-model="statusFilter" @change="loadApplications" 
-                    class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    class="px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400 text-sm">
               <option value="">All Statuses</option>
               <option value="submitted">Submitted</option>
               <option value="under_review">Under Review</option>
@@ -361,7 +361,7 @@
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">New Status</label>
                 <select v-model="statusUpdateForm.status" 
-                        class="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400 text-sm">
                   <option value="">Select new status...</option>
                   <option v-for="status in allowedTransitions" :key="status" :value="status">
                     {{ getStatusLabel(status) }}

@@ -48,6 +48,26 @@
           <p class="text-gray-600">Please provide the details for your loan application</p>
         </div>
 
+        <!-- Read-only Notice -->
+        <div v-if="isReadOnly" class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-blue-800">Application Under Review</h3>
+              <div class="mt-2 text-sm text-blue-700">
+                <p>Your loan application has been submitted and is currently under review. You cannot make changes to the application at this time.</p>
+                <p v-if="application?.status === 'submitted'" class="mt-1">We will notify you once a decision has been made on your application.</p>
+                <p v-else-if="application?.status === 'approved'" class="mt-1">Your application has been approved! Please check your email for further instructions.</p>
+                <p v-else-if="application?.status === 'rejected'" class="mt-1">Your application has been reviewed. Please contact our support team if you have any questions.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Error Display -->
         <div v-if="error" class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
           <div class="flex">
@@ -80,7 +100,7 @@
         </div>
 
         <!-- Form -->
-        <form @submit.prevent="handleSubmit" class="space-y-8">
+        <form @submit.prevent="isReadOnly ? null : handleSubmit" class="space-y-8">
           <!-- Loan Type -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-4">Loan Type</label>
@@ -88,12 +108,13 @@
               <div 
                 v-for="loanType in loanTypeOptions" 
                 :key="loanType.value"
-                @click="formData.loan_type = loanType.value"
+                @click="!isReadOnly && (formData.loan_type = loanType.value)"
                 :class="[
-                  'relative rounded-lg border p-4 cursor-pointer transition-colors',
+                  'relative rounded-lg border p-4 transition-colors',
                   formData.loan_type === loanType.value 
                     ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500' 
-                    : 'border-gray-300 hover:border-gray-400'
+                    : 'border-gray-300 hover:border-gray-400',
+                  isReadOnly ? 'cursor-default' : 'cursor-pointer'
                 ]"
               >
                 <div class="flex items-center">
@@ -101,10 +122,11 @@
                     type="radio"
                     :value="loanType.value"
                     v-model="formData.loan_type"
-                    class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    :disabled="isReadOnly"
+                    class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:opacity-50"
                   >
                   <div class="ml-3">
-                    <label class="block text-sm font-medium text-gray-900 cursor-pointer">
+                    <label class="block text-sm font-medium text-gray-900" :class="{ 'cursor-pointer': !isReadOnly, 'cursor-default': isReadOnly }">
                       {{ loanType.label }}
                     </label>
                     <p class="text-sm text-gray-500">{{ loanType.description }}</p>
@@ -130,7 +152,8 @@
                 :max="eligibilityInfo?.max_loan_amount || 1000000"
                 min="1"
                 step="1"
-                class="block w-full pl-8 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg"
+                :disabled="isReadOnly"
+                class="block w-full pl-8 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg disabled:opacity-50 disabled:bg-gray-50"
                 placeholder="10000"
               >
             </div>
@@ -150,7 +173,8 @@
             <select
               id="repayment_period"
               v-model.number="formData.repayment_period_months"
-              class="block w-full py-3 px-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              :disabled="isReadOnly"
+              class="block w-full py-3 px-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-50"
             >
               <option value="">Select repayment period</option>
               <option 
@@ -172,7 +196,8 @@
               id="loan_purpose"
               v-model="formData.loan_purpose"
               rows="4"
-              class="block w-full py-3 px-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              :disabled="isReadOnly"
+              class="block w-full py-3 px-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-50"
               placeholder="Please describe how you plan to use this loan (minimum 10 characters)"
             ></textarea>
             <p class="mt-1 text-sm text-gray-500">
@@ -189,7 +214,8 @@
               id="additional_notes"
               v-model="formData.additional_notes"
               rows="3"
-              class="block w-full py-3 px-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              :disabled="isReadOnly"
+              class="block w-full py-3 px-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-50"
               placeholder="Any additional information you'd like to provide"
             ></textarea>
             <p class="mt-1 text-sm text-gray-500">
@@ -210,7 +236,28 @@
               Back to Dashboard
             </button>
 
-            <div class="flex space-x-4">
+            <!-- Status indicator for read-only applications -->
+            <div v-if="isReadOnly" class="flex items-center">
+              <div class="flex items-center px-4 py-2 rounded-lg" :class="{
+                'bg-green-50 text-green-800 border border-green-200': application?.status === 'approved',
+                'bg-red-50 text-red-800 border border-red-200': application?.status === 'rejected',
+                'bg-blue-50 text-blue-800 border border-blue-200': application?.status === 'submitted'
+              }">
+                <svg v-if="application?.status === 'approved'" class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                </svg>
+                <svg v-else-if="application?.status === 'rejected'" class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+                <svg v-else class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                </svg>
+                <span class="text-sm font-medium capitalize">{{ application?.status?.replace('_', ' ') }}</span>
+              </div>
+            </div>
+
+            <!-- Action buttons for editable applications -->
+            <div v-else class="flex space-x-4">
               <button
                 v-if="application && application.status === 'in_progress'"
                 type="button"
@@ -284,6 +331,14 @@ const repaymentTermOptions = loanService.getRepaymentTermOptions()
 // Computed properties
 const isEligible = computed(() => {
   return eligibilityInfo.value?.is_eligible === true
+})
+
+const isReadOnly = computed(() => {
+  return application.value?.status === 'submitted' || application.value?.status === 'approved' || application.value?.status === 'rejected'
+})
+
+const canEdit = computed(() => {
+  return !isReadOnly.value && (application.value?.status === 'in_progress' || !application.value)
 })
 
 const estimatedMonthlyPayment = computed(() => {
@@ -378,6 +433,11 @@ const saveDraft = async () => {
 }
 
 const handleSubmit = async () => {
+  // Prevent submission if form is read-only
+  if (isReadOnly.value) {
+    return
+  }
+  
   try {
     isSubmitting.value = true
     error.value = ''

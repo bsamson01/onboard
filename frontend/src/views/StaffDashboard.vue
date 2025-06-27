@@ -243,7 +243,7 @@
         <div class="relative mx-auto p-2 sm:p-5 border w-full max-w-xs sm:max-w-md shadow-lg rounded-md bg-white">
           <h3 class="text-base sm:text-lg font-medium text-gray-900 mb-4">Update Application Status</h3>
           <div v-if="allowedTransitions.length > 0">
-            <select v-model="statusUpdateForm.status" class="w-full mb-4 rounded-md border-gray-300 text-xs sm:text-sm">
+            <select v-model="statusUpdateForm.status" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400 text-sm">
               <option value="" disabled>Select new status</option>
               <option v-for="status in allowedTransitions" :key="status" :value="status">{{ getStatusLabel(status) }}</option>
             </select>
