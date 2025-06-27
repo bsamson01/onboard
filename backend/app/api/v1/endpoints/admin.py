@@ -6,6 +6,7 @@ import httpx
 import asyncio
 from datetime import datetime
 import logging
+import uuid as uuid_lib
 
 from app.database import get_async_db
 from app.models.user import User
@@ -1020,10 +1021,39 @@ async def update_user_role(
 ):
     """Update user role (admin only)."""
     try:
-        # Get user to update
-        stmt = select(User).where(User.id == user_id)
-        result = await session.execute(stmt)
-        user_to_update = result.scalar()
+        # Validate UUID format
+        try:
+            uuid_lib.UUID(user_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid user ID format"
+            )
+        
+        # Validate admin permissions
+        if not current_user or not current_user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required"
+            )
+        
+        if current_user.is_locked:
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail="Admin account is locked"
+            )
+        
+        # Get user to update with error handling
+        try:
+            stmt = select(User).where(User.id == user_id)
+            result = await session.execute(stmt)
+            user_to_update = result.scalar()
+        except SQLAlchemyError as e:
+            logger.error(f"Database error retrieving user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error retrieving user"
+            )
         
         if not user_to_update:
             raise HTTPException(
@@ -1031,64 +1061,105 @@ async def update_user_role(
                 detail="User not found"
             )
         
-        # Prevent changing own role
+        # Security checks
         if str(user_to_update.id) == str(current_user.id):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot change your own role"
             )
         
-        # Store old role
+        # Prevent demoting the last admin
+        if (user_to_update.role == UserRole.ADMIN and 
+            role_update.new_role != UserRole.ADMIN):
+            admin_count = await session.scalar(
+                select(func.count(User.id)).where(
+                    and_(User.role == UserRole.ADMIN, User.is_active == True)
+                )
+            )
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot remove the last admin user"
+                )
+        
+        # Store old role for comparison
         old_role = user_to_update.role
         
-        # Update role
-        user_to_update.role = role_update.new_role
-        
-        # Create role history record
-        role_history = UserRoleHistory(
-            user_id=user_to_update.id,
-            old_role=old_role.value,
-            new_role=role_update.new_role.value,
-            changed_by_id=current_user.id,
-            reason=role_update.reason
-        )
-        session.add(role_history)
-        
-        await session.commit()
-        
-        # Log the action
-        await audit_service.log_onboarding_action(
-            user_id=str(current_user.id),
-            action="user_role_changed",
-            resource_type="user",
-            resource_id=str(user_to_update.id),
-            old_values={"role": old_role.value},
-            new_values={"role": role_update.new_role.value},
-            ip_address=request.client.host,
-            user_agent=request.headers.get("user-agent"),
-            additional_data={
-                "reason": role_update.reason,
-                "target_user_email": user_to_update.email
+        # Check if role is actually changing
+        if old_role == role_update.new_role:
+            return {
+                "message": "User role is already set to the requested role",
+                "user_id": str(user_to_update.id),
+                "role": old_role.value
             }
-        )
         
-        log_audit_event(
-            AuditEvent.ADMIN_ACTION,
-            user_id=str(current_user.id),
-            details={
-                "action": "user_role_changed",
-                "target_user_id": str(user_to_update.id),
-                "old_role": old_role.value,
-                "new_role": role_update.new_role.value,
-                "ip_address": request.client.host
-            }
-        )
+        # Transaction for role update
+        try:
+            # Update role
+            user_to_update.role = role_update.new_role
+            
+            # Create role history record
+            role_history = UserRoleHistory(
+                user_id=user_to_update.id,
+                old_role=old_role.value,
+                new_role=role_update.new_role.value,
+                changed_by_id=current_user.id,
+                reason=role_update.reason or "Role changed by admin"
+            )
+            session.add(role_history)
+            
+            await session.commit()
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Database error updating user role: {str(e)}")
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update user role in database"
+            )
+        
+        # Log the action (outside transaction)
+        try:
+            await audit_service.log_onboarding_action(
+                user_id=str(current_user.id),
+                action="user_role_changed",
+                resource_type="user",
+                resource_id=str(user_to_update.id),
+                old_values={"role": old_role.value},
+                new_values={"role": role_update.new_role.value},
+                ip_address=request.client.host,
+                user_agent=request.headers.get("user-agent"),
+                additional_data={
+                    "reason": role_update.reason,
+                    "target_user_email": user_to_update.email,
+                    "admin_user_email": current_user.email
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to log role change audit: {str(e)}")
+        
+        try:
+            log_audit_event(
+                AuditEvent.ADMIN_ACTION,
+                user_id=str(current_user.id),
+                details={
+                    "action": "user_role_changed",
+                    "target_user_id": str(user_to_update.id),
+                    "old_role": old_role.value,
+                    "new_role": role_update.new_role.value,
+                    "ip_address": request.client.host
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to log admin action: {str(e)}")
         
         return {
             "message": "User role updated successfully",
             "user_id": str(user_to_update.id),
             "old_role": old_role.value,
-            "new_role": role_update.new_role.value
+            "new_role": role_update.new_role.value,
+            "changed_by": current_user.email,
+            "reason": role_update.reason
         }
         
     except HTTPException:
