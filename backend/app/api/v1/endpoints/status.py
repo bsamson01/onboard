@@ -750,67 +750,169 @@ async def get_admin_applications_list(
     assigned_to_me: bool = False,
     limit: int = 50,
     offset: int = 0,
+    application_type: Optional[str] = None,  # 'onboarding' or 'loan' or None for all
     current_user: User = Depends(require_staff),
     session: AsyncSession = Depends(get_async_db)
 ):
-    """Get applications list for admin/staff users. Now only returns onboarding applications that are ready for review (UNDER_REVIEW)."""
+    """Get applications list for admin/staff users. Returns both onboarding and loan applications ready for review."""
     from app.models.onboarding import OnboardingApplication, OnboardingStatus
+    from app.models.loan import LoanApplication
     from app.schemas.status import ApplicationSummaryResponse, StatusDisplayInfo
     from app.services.status_service import status_service
-    from sqlalchemy import desc
-
-    # Only onboarding applications with status UNDER_REVIEW
-    onboarding_stmt = select(OnboardingApplication).where(
-        OnboardingApplication.status == OnboardingStatus.UNDER_REVIEW
-    ).order_by(desc(OnboardingApplication.updated_at))
-
-    onboarding_result = await session.execute(onboarding_stmt)
-    onboarding_applications = onboarding_result.scalars().all()
-
-    # Map OnboardingStatus to ApplicationStatus for display
-    status_map = {
-        OnboardingStatus.DRAFT: ApplicationStatus.IN_PROGRESS,
-        OnboardingStatus.IN_PROGRESS: ApplicationStatus.IN_PROGRESS,
-        OnboardingStatus.PENDING_DOCUMENTS: ApplicationStatus.IN_PROGRESS,
-        OnboardingStatus.UNDER_REVIEW: ApplicationStatus.UNDER_REVIEW,
-        OnboardingStatus.APPROVED: ApplicationStatus.APPROVED,
-        OnboardingStatus.REJECTED: ApplicationStatus.REJECTED,
-        OnboardingStatus.COMPLETED: ApplicationStatus.DONE
-    }
+    from sqlalchemy import desc, or_
 
     all_applications = []
-    for app in onboarding_applications:
-        mapped_status = status_map.get(app.status, ApplicationStatus.IN_PROGRESS)
-        status_display = status_service.get_status_display_info(mapped_status)
-        all_applications.append({
-            'app': app,
-            'type': 'onboarding',
-            'updated_at': app.updated_at,
-            'summary': ApplicationSummaryResponse(
-                id=app.id,
-                application_number=app.application_number,
-                status=mapped_status,
-                status_display=StatusDisplayInfo(**status_display),
-                loan_type="Onboarding",
-                requested_amount=0.0,
-                created_at=app.created_at,
-                submitted_at=app.submitted_at,
-                last_updated=app.updated_at
-            )
-        })
 
-    # Sort and paginate
+    # Only fetch onboarding applications if not filtering for loan applications
+    if application_type != 'loan':
+        # Onboarding applications ready for review (UNDER_REVIEW status)
+        onboarding_conditions = [OnboardingApplication.status == OnboardingStatus.UNDER_REVIEW]
+        
+        # Apply status filter for onboarding
+        if status == ApplicationStatus.UNDER_REVIEW:
+            pass  # Already filtered above
+        elif status == ApplicationStatus.APPROVED:
+            onboarding_conditions = [OnboardingApplication.status == OnboardingStatus.APPROVED]
+        elif status == ApplicationStatus.REJECTED:
+            onboarding_conditions = [OnboardingApplication.status == OnboardingStatus.REJECTED]
+        elif status == ApplicationStatus.DONE:
+            onboarding_conditions = [OnboardingApplication.status == OnboardingStatus.COMPLETED]
+        elif status == ApplicationStatus.IN_PROGRESS:
+            onboarding_conditions = [OnboardingApplication.status.in_([
+                OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS, OnboardingStatus.PENDING_DOCUMENTS
+            ])]
+        elif status is None:
+            # Include all onboarding applications for review
+            onboarding_conditions = [OnboardingApplication.status.in_([
+                OnboardingStatus.UNDER_REVIEW, OnboardingStatus.APPROVED, OnboardingStatus.REJECTED, OnboardingStatus.COMPLETED
+            ])]
+
+        onboarding_stmt = select(OnboardingApplication).where(*onboarding_conditions)
+        
+        # Apply assignment filter for onboarding
+        if assigned_to_me:
+            onboarding_stmt = onboarding_stmt.where(OnboardingApplication.assigned_officer_id == current_user.id)
+        
+        onboarding_stmt = onboarding_stmt.order_by(desc(OnboardingApplication.updated_at))
+        onboarding_result = await session.execute(onboarding_stmt)
+        onboarding_applications = onboarding_result.scalars().all()
+
+        # Map OnboardingStatus to ApplicationStatus for display
+        onboarding_status_map = {
+            OnboardingStatus.DRAFT: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.IN_PROGRESS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.PENDING_DOCUMENTS: ApplicationStatus.IN_PROGRESS,
+            OnboardingStatus.UNDER_REVIEW: ApplicationStatus.UNDER_REVIEW,
+            OnboardingStatus.APPROVED: ApplicationStatus.APPROVED,
+            OnboardingStatus.REJECTED: ApplicationStatus.REJECTED,
+            OnboardingStatus.COMPLETED: ApplicationStatus.DONE
+        }
+
+        for app in onboarding_applications:
+            mapped_status = onboarding_status_map.get(app.status, ApplicationStatus.IN_PROGRESS)
+            status_display = status_service.get_status_display_info(mapped_status)
+            all_applications.append({
+                'app': app,
+                'type': 'onboarding',
+                'updated_at': app.updated_at,
+                'summary': ApplicationSummaryResponse(
+                    id=app.id,
+                    application_number=app.application_number,
+                    status=mapped_status,
+                    status_display=StatusDisplayInfo(**status_display),
+                    loan_type="Onboarding",
+                    requested_amount=0.0,
+                    created_at=app.created_at,
+                    submitted_at=app.submitted_at,
+                    last_updated=app.updated_at
+                )
+            })
+
+    # Only fetch loan applications if not filtering for onboarding applications
+    if application_type != 'onboarding':
+        # Loan applications ready for review (SUBMITTED and UNDER_REVIEW statuses)
+        loan_conditions = []
+        
+        # Apply status filter for loans
+        if status == ApplicationStatus.SUBMITTED:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.SUBMITTED]
+        elif status == ApplicationStatus.UNDER_REVIEW:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.UNDER_REVIEW]
+        elif status == ApplicationStatus.APPROVED:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.APPROVED]
+        elif status == ApplicationStatus.REJECTED:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.REJECTED]
+        elif status == ApplicationStatus.AWAITING_DISBURSEMENT:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.AWAITING_DISBURSEMENT]
+        elif status == ApplicationStatus.DONE:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.DONE]
+        elif status == ApplicationStatus.CANCELLED:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.CANCELLED]
+        elif status == ApplicationStatus.IN_PROGRESS:
+            loan_conditions = [LoanApplication.status == ApplicationStatus.IN_PROGRESS]
+        elif status is None:
+            # Include all loan applications for review/management
+            loan_conditions = [LoanApplication.status.in_([
+                ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW, 
+                ApplicationStatus.APPROVED, ApplicationStatus.REJECTED,
+                ApplicationStatus.AWAITING_DISBURSEMENT, ApplicationStatus.DONE, ApplicationStatus.CANCELLED
+            ])]
+        else:
+            loan_conditions = [LoanApplication.status.in_([
+                ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW
+            ])]
+
+        loan_stmt = select(LoanApplication).where(*loan_conditions)
+        
+        # Apply assignment filter for loans
+        if assigned_to_me:
+            loan_stmt = loan_stmt.where(LoanApplication.assigned_officer_id == current_user.id)
+        
+        loan_stmt = loan_stmt.order_by(desc(LoanApplication.updated_at))
+        loan_result = await session.execute(loan_stmt)
+        loan_applications = loan_result.scalars().all()
+
+        for app in loan_applications:
+            status_display = status_service.get_status_display_info(app.status)
+            all_applications.append({
+                'app': app,
+                'type': 'loan',
+                'updated_at': app.updated_at,
+                'summary': ApplicationSummaryResponse(
+                    id=app.id,
+                    application_number=app.application_number,
+                    status=app.status,
+                    status_display=StatusDisplayInfo(**status_display),
+                    loan_type=str(app.loan_type.value) if hasattr(app.loan_type, 'value') else str(app.loan_type),
+                    requested_amount=float(app.requested_amount),
+                    created_at=app.created_at,
+                    submitted_at=app.submitted_at,
+                    last_updated=app.updated_at
+                )
+            })
+
+    # Sort all applications by update time
     all_applications.sort(key=lambda x: x['updated_at'], reverse=True)
+    
+    # Apply pagination
     start_idx = offset
     end_idx = start_idx + limit
     paginated_applications = all_applications[start_idx:end_idx]
     app_summaries = [item['summary'] for item in paginated_applications]
 
+    # Count pending review applications (UNDER_REVIEW for onboarding, SUBMITTED + UNDER_REVIEW for loans)
+    pending_review_count = sum(1 for app in all_applications 
+                              if app['summary'].status in [ApplicationStatus.UNDER_REVIEW, ApplicationStatus.SUBMITTED])
+
     return AdminApplicationsListResponse(
         applications=app_summaries,
         total_count=len(all_applications),
-        pending_review_count=len(all_applications),
-        filters_applied={"status": "under_review"}
+        pending_review_count=pending_review_count,
+        filters_applied={
+            "status": status.value if status else None, 
+            "assigned_to_me": assigned_to_me,
+            "application_type": application_type
+        }
     )
 
 
