@@ -1,12 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Security
+from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from typing import List, Optional
 import logging
 from datetime import datetime
+import uuid as uuid_lib
+import os
+from pathlib import Path
 
 from app.database import get_async_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.onboarding import Customer, Document, DocumentType, DocumentStatus
 from app.core.auth import get_current_user
 from app.schemas.profile import (
@@ -20,11 +25,88 @@ from app.core.logging import log_audit_event, AuditEvent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+security = HTTPBearer()
 
 # Initialize services
 user_state_service = UserStateService()
 file_service = FileService()
 audit_service = AuditService()
+
+# Security constants
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_MIME_TYPES = {
+    'application/pdf',
+    'image/jpeg',
+    'image/jpg', 
+    'image/png',
+    'image/gif'
+}
+ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.gif'}
+
+
+def validate_uuid(uuid_string: str) -> bool:
+    """Validate UUID format."""
+    try:
+        uuid_lib.UUID(uuid_string)
+        return True
+    except ValueError:
+        return False
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename to prevent path traversal attacks."""
+    if not filename:
+        raise ValueError("Filename cannot be empty")
+    
+    # Remove path components and keep only the filename
+    safe_filename = os.path.basename(filename)
+    
+    # Remove any remaining dangerous characters
+    safe_filename = "".join(c for c in safe_filename if c.isalnum() or c in "._-")
+    
+    if not safe_filename:
+        raise ValueError("Invalid filename")
+    
+    return safe_filename
+
+
+def validate_file_security(file: UploadFile) -> None:
+    """Validate file for security requirements."""
+    if not file:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+    
+    # Check file size
+    if hasattr(file, 'size') and file.size and file.size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {MAX_FILE_SIZE // 1024 // 1024}MB")
+    
+    # Check file extension
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}")
+    
+    # Check MIME type
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=400, detail=f"MIME type not allowed. Allowed types: {', '.join(ALLOWED_MIME_TYPES)}")
+
+
+async def get_customer_safely(user_id: str, session: AsyncSession) -> Optional[Customer]:
+    """Safely retrieve customer with proper error handling."""
+    try:
+        if not validate_uuid(user_id):
+            raise ValueError("Invalid user ID format")
+        
+        stmt = select(Customer).where(Customer.user_id == user_id)
+        result = await session.execute(stmt)
+        return result.scalar()
+    except SQLAlchemyError as e:
+        logger.error(f"Database error retrieving customer for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Database error retrieving customer data")
+    except Exception as e:
+        logger.error(f"Error retrieving customer for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error retrieving customer data")
 
 
 @router.get("/profile", response_model=UserProfileResponse)
@@ -34,95 +116,122 @@ async def get_user_profile(
 ):
     """Get complete user profile information."""
     try:
-        # Get customer data if available
+        # Validate user access
+        if not current_user or not current_user.is_active:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get customer data safely
+        customer = await get_customer_safely(str(current_user.id), session)
         customer_data = None
         documents_count = 0
         verified_documents_count = 0
         
-        customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
-        customer_result = await session.execute(customer_stmt)
-        customer = customer_result.scalar()
-        
         if customer:
-            # Build customer data dictionary
-            customer_data = {
-                "id": str(customer.id),
-                "customer_number": customer.customer_number,
-                "date_of_birth": customer.date_of_birth.isoformat() if customer.date_of_birth else None,
-                "gender": customer.gender,
-                "marital_status": customer.marital_status,
-                "nationality": customer.nationality,
-                "id_number": customer.id_number,
-                "id_type": customer.id_type,
-                "address_line1": customer.address_line1,
-                "address_line2": customer.address_line2,
-                "city": customer.city,
-                "state_province": customer.state_province,
-                "postal_code": customer.postal_code,
-                "country": customer.country,
-                "emergency_contact_name": customer.emergency_contact_name,
-                "emergency_contact_phone": customer.emergency_contact_phone,
-                "emergency_contact_relationship": customer.emergency_contact_relationship,
-                "employment_status": customer.employment_status,
-                "employer_name": customer.employer_name,
-                "job_title": customer.job_title,
-                "monthly_income": float(customer.monthly_income) if customer.monthly_income else None,
-                "employment_duration_months": customer.employment_duration_months,
-                "bank_name": customer.bank_name,
-                "bank_account_number": customer.bank_account_number,
-                "bank_account_type": customer.bank_account_type,
-                "has_other_loans": customer.has_other_loans,
-                "other_loans_details": customer.other_loans_details,
-                "consent_data_processing": customer.consent_data_processing,
-                "consent_credit_check": customer.consent_credit_check,
-                "consent_marketing": customer.consent_marketing,
-                "preferred_communication": customer.preferred_communication,
-                "is_verified": customer.is_verified,
-                "verification_completed_at": customer.verification_completed_at.isoformat() if customer.verification_completed_at else None
-            }
+            try:
+                # Build customer data dictionary with safe access
+                customer_data = {
+                    "id": str(customer.id),
+                    "customer_number": customer.customer_number,
+                    "date_of_birth": customer.date_of_birth.isoformat() if customer.date_of_birth else None,
+                    "gender": customer.gender,
+                    "marital_status": customer.marital_status,
+                    "nationality": customer.nationality,
+                    "id_number": customer.id_number,
+                    "id_type": customer.id_type,
+                    "address_line1": customer.address_line1,
+                    "address_line2": customer.address_line2,
+                    "city": customer.city,
+                    "state_province": customer.state_province,
+                    "postal_code": customer.postal_code,
+                    "country": customer.country,
+                    "emergency_contact_name": customer.emergency_contact_name,
+                    "emergency_contact_phone": customer.emergency_contact_phone,
+                    "emergency_contact_relationship": customer.emergency_contact_relationship,
+                    "employment_status": customer.employment_status,
+                    "employer_name": customer.employer_name,
+                    "job_title": customer.job_title,
+                    "monthly_income": float(customer.monthly_income) if customer.monthly_income else None,
+                    "employment_duration_months": customer.employment_duration_months,
+                    "bank_name": customer.bank_name,
+                    "bank_account_number": customer.bank_account_number,
+                    "bank_account_type": customer.bank_account_type,
+                    "has_other_loans": customer.has_other_loans,
+                    "other_loans_details": customer.other_loans_details,
+                    "consent_data_processing": customer.consent_data_processing,
+                    "consent_credit_check": customer.consent_credit_check,
+                    "consent_marketing": customer.consent_marketing,
+                    "preferred_communication": customer.preferred_communication,
+                    "is_verified": customer.is_verified,
+                    "verification_completed_at": customer.verification_completed_at.isoformat() if customer.verification_completed_at else None
+                }
+                
+                # Get document counts safely
+                try:
+                    documents_count = await session.scalar(
+                        select(func.count(Document.id)).where(Document.customer_id == customer.id)
+                    ) or 0
+                    
+                    verified_documents_count = await session.scalar(
+                        select(func.count(Document.id)).where(
+                            and_(
+                                Document.customer_id == customer.id,
+                                Document.status == DocumentStatus.VERIFIED
+                            )
+                        )
+                    ) or 0
+                except SQLAlchemyError as e:
+                    logger.warning(f"Failed to get document counts for user {current_user.id}: {str(e)}")
+                    # Continue with 0 counts rather than failing
+                    
+            except Exception as e:
+                logger.error(f"Error building customer data for user {current_user.id}: {str(e)}")
+                # Continue without customer data rather than failing
+        
+        # Build response safely
+        try:
+            profile_response = UserProfileResponse(
+                id=str(current_user.id),
+                email=current_user.email,
+                username=current_user.username,
+                first_name=current_user.first_name or "",
+                last_name=current_user.last_name or "",
+                phone_number=current_user.phone_number,
+                role=current_user.role,
+                user_state=current_user.user_state,
+                is_active=current_user.is_active,
+                is_verified=current_user.is_verified,
+                is_locked=current_user.is_locked,
+                last_login=current_user.last_login,
+                created_at=current_user.created_at,
+                onboarding_completed_at=current_user.onboarding_completed_at,
+                last_profile_update=current_user.last_profile_update,
+                profile_expiry_date=current_user.profile_expiry_date,
+                profile_completion_percentage=current_user.profile_completion_percentage,
+                can_create_loans=current_user.can_create_loans,
+                customer_data=customer_data,
+                documents_count=documents_count,
+                verified_documents_count=verified_documents_count
+            )
             
-            # Get document counts
-            documents_count = await session.scalar(
-                select(func.count(Document.id)).where(Document.customer_id == customer.id)
-            )
-            verified_documents_count = await session.scalar(
-                select(func.count(Document.id)).where(
-                    and_(
-                        Document.customer_id == customer.id,
-                        Document.status == DocumentStatus.VERIFIED
-                    )
-                )
+            return profile_response
+            
+        except Exception as e:
+            logger.error(f"Error building profile response for user {current_user.id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error building profile response"
             )
         
-        # Build response
-        profile_response = UserProfileResponse(
-            id=str(current_user.id),
-            email=current_user.email,
-            username=current_user.username,
-            first_name=current_user.first_name,
-            last_name=current_user.last_name,
-            phone_number=current_user.phone_number,
-            role=current_user.role,
-            user_state=current_user.user_state,
-            is_active=current_user.is_active,
-            is_verified=current_user.is_verified,
-            is_locked=current_user.is_locked,
-            last_login=current_user.last_login,
-            created_at=current_user.created_at,
-            onboarding_completed_at=current_user.onboarding_completed_at,
-            last_profile_update=current_user.last_profile_update,
-            profile_expiry_date=current_user.profile_expiry_date,
-            profile_completion_percentage=current_user.profile_completion_percentage,
-            can_create_loans=current_user.can_create_loans,
-            customer_data=customer_data,
-            documents_count=documents_count or 0,
-            verified_documents_count=verified_documents_count or 0
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting user profile for user {getattr(current_user, 'id', 'unknown')}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error retrieving profile"
         )
-        
-        return profile_response
-        
     except Exception as e:
-        logger.error(f"Failed to get user profile for user {current_user.id}: {str(e)}")
+        logger.error(f"Failed to get user profile for user {getattr(current_user, 'id', 'unknown')}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve user profile"
@@ -377,10 +486,21 @@ async def upload_document(
 ):
     """Upload a document for the user."""
     try:
-        # Get or create customer record
-        customer_stmt = select(Customer).where(Customer.user_id == current_user.id)
-        customer_result = await session.execute(customer_stmt)
-        customer = customer_result.scalar()
+        # Validate user access
+        if not current_user or not current_user.is_active:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        if current_user.is_locked:
+            raise HTTPException(status_code=423, detail="Account is locked")
+        
+        # Validate file security first
+        validate_file_security(file)
+        
+        # Sanitize filename
+        safe_filename = sanitize_filename(file.filename)
+        
+        # Get customer record safely
+        customer = await get_customer_safely(str(current_user.id), session)
         
         if not customer:
             raise HTTPException(
@@ -388,52 +508,104 @@ async def upload_document(
                 detail="Customer profile not found. Please complete your profile first."
             )
         
-        # Validate file
-        if not file.content_type or not file.content_type.startswith(('image/', 'application/pdf')):
+        # Check for existing document of same type (prevent duplicates without proper handling)
+        try:
+            existing_doc_stmt = select(Document).where(
+                and_(
+                    Document.customer_id == customer.id,
+                    Document.document_type == document_type,
+                    Document.status != DocumentStatus.REJECTED
+                )
+            )
+            existing_doc_result = await session.execute(existing_doc_stmt)
+            existing_doc = existing_doc_result.scalar()
+            
+            if existing_doc:
+                logger.info(f"User {current_user.id} replacing existing document of type {document_type}")
+                # Mark old document as replaced rather than deleting
+                existing_doc.status = DocumentStatus.REJECTED
+                existing_doc.verification_notes = "Replaced with new upload"
+                
+        except SQLAlchemyError as e:
+            logger.warning(f"Failed to check existing documents for user {current_user.id}: {str(e)}")
+            # Continue with upload even if check fails
+        
+        # Read file content safely (with size limit)
+        file_content = await file.read()
+        if len(file_content) > MAX_FILE_SIZE:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only image and PDF files are allowed"
+                status_code=413, 
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // 1024 // 1024}MB"
             )
         
-        # Save file
-        file_path = await file_service.save_document(file, str(customer.id), document_type.value)
+        # Reset file pointer for service
+        await file.seek(0)
         
-        # Create document record
-        document = Document(
-            customer_id=customer.id,
-            document_type=document_type,
-            document_name=file.filename,
-            file_path=file_path,
-            file_size=file.size,
-            mime_type=file.content_type,
-            original_filename=file.filename,
-            status=DocumentStatus.UPLOADED,
-            is_required=True
-        )
+        try:
+            # Save file using service
+            file_path = await file_service.save_document(file, str(customer.id), document_type.value)
+        except Exception as e:
+            logger.error(f"Failed to save file for user {current_user.id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save uploaded file"
+            )
         
-        session.add(document)
-        await session.commit()
+        # Create document record with transaction safety
+        try:
+            document = Document(
+                customer_id=customer.id,
+                document_type=document_type,
+                document_name=safe_filename,
+                file_path=file_path,
+                file_size=len(file_content),
+                mime_type=file.content_type,
+                original_filename=safe_filename,
+                status=DocumentStatus.UPLOADED,
+                is_required=True
+            )
+            
+            session.add(document)
+            await session.commit()
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Database error creating document record for user {current_user.id}: {str(e)}")
+            # Clean up uploaded file if database operation fails
+            try:
+                await file_service.delete_document(file_path)
+            except:
+                pass  # Log but don't fail on cleanup error
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save document record"
+            )
         
-        # Log document upload
-        await audit_service.log_onboarding_action(
-            user_id=str(current_user.id),
-            action="document_uploaded",
-            resource_type="document",
-            resource_id=str(document.id),
-            additional_data={
-                "document_type": document_type.value,
-                "file_name": file.filename,
-                "file_size": file.size,
-                "mime_type": file.content_type
-            }
-        )
+        # Log document upload (outside transaction)
+        try:
+            await audit_service.log_onboarding_action(
+                user_id=str(current_user.id),
+                action="document_uploaded",
+                resource_type="document",
+                resource_id=str(document.id),
+                additional_data={
+                    "document_type": document_type.value,
+                    "file_name": safe_filename,
+                    "file_size": len(file_content),
+                    "mime_type": file.content_type,
+                    "original_filename": file.filename
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to log document upload for user {current_user.id}: {str(e)}")
+            # Don't fail operation due to logging error
         
         response = DocumentUploadResponse(
             document_id=str(document.id),
             document_type=document_type,
-            document_name=file.filename,
+            document_name=safe_filename,
             status=DocumentStatus.UPLOADED,
-            file_size=file.size,
+            file_size=len(file_content),
             mime_type=file.content_type,
             uploaded_at=document.uploaded_at
         )
@@ -443,7 +615,7 @@ async def upload_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to upload document for user {current_user.id}: {str(e)}")
+        logger.error(f"Failed to upload document for user {getattr(current_user, 'id', 'unknown')}: {str(e)}")
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -1,8 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-from typing import List, Optional
+from sqlalchemy import select, func, and_, or_
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
+import asyncio
+from contextlib import asynccontextmanager
 
 from app.models.user import User, UserState, UserRoleHistory
 from app.models.onboarding import Customer, OnboardingApplication, OnboardingStatus
@@ -16,22 +19,69 @@ class UserStateService:
     
     def __init__(self):
         self.audit_service = AuditService()
+        self._max_retry_attempts = 3
+        self._retry_delay = 1.0  # seconds
+    
+    @asynccontextmanager
+    async def _safe_transaction(self, session: AsyncSession):
+        """Context manager for safe database transactions with retry logic."""
+        for attempt in range(self._max_retry_attempts):
+            try:
+                yield session
+                return
+            except (SQLAlchemyError, IntegrityError) as e:
+                await session.rollback()
+                if attempt == self._max_retry_attempts - 1:
+                    logger.error(f"Database transaction failed after {self._max_retry_attempts} attempts: {str(e)}")
+                    raise
+                logger.warning(f"Database transaction failed (attempt {attempt + 1}), retrying: {str(e)}")
+                await asyncio.sleep(self._retry_delay * (attempt + 1))
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Unexpected error in transaction: {str(e)}")
+                raise
+    
+    def _validate_user(self, user: User) -> None:
+        """Validate user object before operations."""
+        if not user:
+            raise ValueError("User object is required")
+        if not user.id:
+            raise ValueError("User must have a valid ID")
+        if not user.email:
+            raise ValueError("User must have a valid email")
+    
+    def _validate_user_state(self, state: UserState) -> None:
+        """Validate user state."""
+        if not isinstance(state, UserState):
+            raise ValueError("Invalid user state type")
+        valid_states = [UserState.REGISTERED, UserState.ONBOARDED, UserState.OUTDATED]
+        if state not in valid_states:
+            raise ValueError(f"Invalid user state: {state}")
     
     async def check_user_state(self, user: User, session: AsyncSession) -> UserState:
         """Check and determine the correct user state for a user."""
         try:
+            self._validate_user(user)
+            
             # Check if user has completed onboarding
             if user.onboarding_completed_at is None:
+                logger.debug(f"User {user.id} has not completed onboarding")
                 return UserState.REGISTERED
             
             # Check if profile is outdated (more than 1 year old)
             if self._is_profile_outdated(user):
+                logger.debug(f"User {user.id} profile is outdated")
                 return UserState.OUTDATED
-                
+            
+            logger.debug(f"User {user.id} is fully onboarded")
             return UserState.ONBOARDED
             
+        except ValueError as e:
+            logger.error(f"Validation error checking user state for user {getattr(user, 'id', 'unknown')}: {str(e)}")
+            raise
         except Exception as e:
-            logger.error(f"Failed to check user state for user {user.id}: {str(e)}")
+            logger.error(f"Failed to check user state for user {getattr(user, 'id', 'unknown')}: {str(e)}")
+            # Return safe default state in case of error
             return UserState.REGISTERED
     
     async def update_user_state(
@@ -43,46 +93,93 @@ class UserStateService:
     ) -> User:
         """Update user state and log the change."""
         try:
+            self._validate_user(user)
+            self._validate_user_state(new_state)
+            
+            if reason and len(reason.strip()) > 500:
+                raise ValueError("Reason cannot exceed 500 characters")
+            
             old_state = user.user_state
-            user.user_state = new_state
             
-            # Update timestamps based on state
-            current_time = datetime.utcnow()
+            # Validate state transition
+            if old_state == new_state:
+                logger.warning(f"User {user.id} state is already {new_state}")
+                return user
             
-            if new_state == UserState.ONBOARDED:
-                if not user.onboarding_completed_at:
-                    user.onboarding_completed_at = current_time
-                user.last_profile_update = current_time
-                user.profile_expiry_date = current_time + timedelta(days=365)
-            elif new_state == UserState.OUTDATED:
-                # Profile expiry should already be set, but ensure it's in the past
-                if not user.profile_expiry_date or user.profile_expiry_date > current_time:
-                    user.profile_expiry_date = current_time - timedelta(days=1)
+            # Validate state transition logic
+            self._validate_state_transition(old_state, new_state)
             
-            await session.commit()
+            async with self._safe_transaction(session):
+                user.user_state = new_state
+                
+                # Update timestamps based on state
+                current_time = datetime.utcnow()
+                
+                if new_state == UserState.ONBOARDED:
+                    if not user.onboarding_completed_at:
+                        user.onboarding_completed_at = current_time
+                    user.last_profile_update = current_time
+                    user.profile_expiry_date = current_time + timedelta(days=365)
+                elif new_state == UserState.OUTDATED:
+                    # Profile expiry should already be set, but ensure it's in the past
+                    if not user.profile_expiry_date or user.profile_expiry_date > current_time:
+                        user.profile_expiry_date = current_time - timedelta(days=1)
+                elif new_state == UserState.REGISTERED:
+                    # Reset onboarding timestamps if moving back to registered
+                    user.onboarding_completed_at = None
+                    user.profile_expiry_date = None
+                
+                await session.commit()
+                
+                # Log the state change (outside transaction to avoid rollback issues)
+                try:
+                    await self.audit_service.log_onboarding_action(
+                        user_id=str(user.id),
+                        action="user_state_changed",
+                        resource_type="user",
+                        resource_id=str(user.id),
+                        old_values={"user_state": old_state.value if old_state else None},
+                        new_values={"user_state": new_state.value},
+                        additional_data={
+                            "reason": reason or "State updated by system",
+                            "old_state": old_state.value if old_state else None,
+                            "new_state": new_state.value,
+                            "timestamp": current_time.isoformat()
+                        }
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Failed to log state change audit for user {user.id}: {str(audit_error)}")
+                    # Don't fail the entire operation due to audit logging failure
+                
+                logger.info(f"Updated user state for user {user.id} from {old_state} to {new_state}")
+                return user
             
-            # Log the state change
-            await self.audit_service.log_onboarding_action(
-                user_id=str(user.id),
-                action="user_state_changed",
-                resource_type="user",
-                resource_id=str(user.id),
-                old_values={"user_state": old_state.value if old_state else None},
-                new_values={"user_state": new_state.value},
-                additional_data={
-                    "reason": reason or "State updated by system",
-                    "old_state": old_state.value if old_state else None,
-                    "new_state": new_state.value
-                }
-            )
-            
-            logger.info(f"Updated user state for user {user.id} from {old_state} to {new_state}")
-            return user
-            
-        except Exception as e:
-            logger.error(f"Failed to update user state for user {user.id}: {str(e)}")
+        except ValueError as e:
+            logger.error(f"Validation error updating user state for user {getattr(user, 'id', 'unknown')}: {str(e)}")
+            raise
+        except SQLAlchemyError as e:
+            logger.error(f"Database error updating user state for user {getattr(user, 'id', 'unknown')}: {str(e)}")
             await session.rollback()
             raise
+        except Exception as e:
+            logger.error(f"Failed to update user state for user {getattr(user, 'id', 'unknown')}: {str(e)}")
+            await session.rollback()
+            raise
+    
+    def _validate_state_transition(self, old_state: UserState, new_state: UserState) -> None:
+        """Validate that the state transition is allowed."""
+        # Define allowed transitions
+        allowed_transitions = {
+            UserState.REGISTERED: [UserState.ONBOARDED],
+            UserState.ONBOARDED: [UserState.OUTDATED, UserState.REGISTERED],  # Allow reverting for admin actions
+            UserState.OUTDATED: [UserState.ONBOARDED, UserState.REGISTERED]   # Allow updating or reverting
+        }
+        
+        if old_state not in allowed_transitions:
+            raise ValueError(f"No transitions defined for state {old_state}")
+        
+        if new_state not in allowed_transitions[old_state]:
+            raise ValueError(f"Invalid state transition from {old_state} to {new_state}")
     
     async def check_profile_expiry(self, user: User) -> bool:
         """Check if user's profile has expired."""
