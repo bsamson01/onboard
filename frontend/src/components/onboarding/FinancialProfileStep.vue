@@ -417,6 +417,10 @@ const props = defineProps({
   stepData: {
     type: Object,
     default: () => ({})
+  },
+  isReadOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -529,6 +533,12 @@ const validateForm = () => {
 }
 
 const handleSubmit = async () => {
+  if (isReadOnly) {
+    // In read-only mode, just navigate to next step without validation or submission
+    emit('next', { ...formData })
+    return
+  }
+  
   if (!validateForm()) {
     return
   }

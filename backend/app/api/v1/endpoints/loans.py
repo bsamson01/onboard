@@ -39,18 +39,15 @@ async def get_customer_for_user(user: User, session: AsyncSession) -> Customer:
 
 async def verify_onboarding_complete(customer: Customer, session: AsyncSession) -> None:
     """Verify that the customer has completed onboarding"""
-    stmt = select(OnboardingApplication).where(
-        and_(
-            OnboardingApplication.customer_id == customer.id,
-            OnboardingApplication.status == OnboardingStatus.APPROVED
-        )
-    )
-    result = await session.execute(stmt)
-    onboarding_app = result.scalar()
-    if not onboarding_app:
+    # Check user's profile state instead of onboarding applications
+    user_stmt = select(User).where(User.id == customer.user_id)
+    result = await session.execute(user_stmt)
+    user = result.scalar()
+    
+    if not user or user.user_state.lower() != 'onboarded':
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail="You must complete and get approval for onboarding before applying for a loan."
+            detail="You must complete onboarding and be approved before applying for a loan."
         )
 
 

@@ -23,8 +23,12 @@
               v-model="formData.email"
               type="email"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.email }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.email,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your email address"
             />
             <p v-if="errors.email" class="text-sm text-red-600 flex items-center">
@@ -42,8 +46,12 @@
               v-model="formData.phone_number"
               type="tel"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.phone_number }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.phone_number,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your phone number"
             />
             <p v-if="errors.phone_number" class="text-sm text-red-600 flex items-center">
@@ -60,8 +68,12 @@
               id="alternative_phone"
               v-model="formData.alternative_phone"
               type="tel"
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.alternative_phone }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.alternative_phone,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter alternative phone number"
             />
             <p v-if="errors.alternative_phone" class="text-sm text-red-600 flex items-center">
@@ -79,8 +91,12 @@
               v-model="formData.emergency_contact_name"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_name }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_name,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter emergency contact name"
             />
             <p v-if="errors.emergency_contact_name" class="text-sm text-red-600 flex items-center">
@@ -98,8 +114,12 @@
               v-model="formData.emergency_contact_phone"
               type="tel"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_phone }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_phone,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter emergency contact phone"
             />
             <p v-if="errors.emergency_contact_phone" class="text-sm text-red-600 flex items-center">
@@ -117,8 +137,12 @@
               v-model="formData.emergency_contact_relationship"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_relationship }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.emergency_contact_relationship,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter relationship (e.g., Spouse, Parent, Friend)"
             />
             <p v-if="errors.emergency_contact_relationship" class="text-sm text-red-600 flex items-center">
@@ -149,8 +173,12 @@
               v-model="formData.address_line1"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.address_line1 }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.address_line1,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your street address"
             />
             <p v-if="errors.address_line1" class="text-sm text-red-600 flex items-center">
@@ -168,8 +196,12 @@
               v-model="formData.city"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.city }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.city,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your city"
             />
             <p v-if="errors.city" class="text-sm text-red-600 flex items-center">
@@ -187,8 +219,12 @@
               v-model="formData.state_province"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.state_province }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.state_province,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your state or province"
             />
             <p v-if="errors.state_province" class="text-sm text-red-600 flex items-center">
@@ -206,8 +242,12 @@
               v-model="formData.postal_code"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.postal_code }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.postal_code,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your postal code"
             />
             <p v-if="errors.postal_code" class="text-sm text-red-600 flex items-center">
@@ -225,8 +265,12 @@
               v-model="formData.country"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.country }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.country,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your country"
             />
             <p v-if="errors.country" class="text-sm text-red-600 flex items-center">
@@ -243,8 +287,12 @@
               id="residence_type"
               v-model="formData.residence_type"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.residence_type }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.residence_type,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
             >
               <option value="">Select residence type</option>
               <option value="owned">Owned</option>
@@ -268,8 +316,12 @@
             id="time_at_address"
             v-model="formData.time_at_address"
             required
+            :disabled="isReadOnly"
             class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-            :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.time_at_address }"
+            :class="{ 
+              'border-red-300 focus:ring-red-500 focus:border-red-500': errors.time_at_address,
+              'bg-gray-100 cursor-not-allowed': isReadOnly
+            }"
           >
             <option value="">Select time period</option>
             <option value="less_than_1_year">Less than 1 year</option>
@@ -334,6 +386,10 @@ const props = defineProps({
   stepData: {
     type: Object,
     default: () => ({})
+  },
+  isReadOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -454,6 +510,12 @@ const validateForm = () => {
 }
 
 const handleSubmit = async () => {
+  if (isReadOnly) {
+    // In read-only mode, just navigate to next step without validation or submission
+    emit('next', { ...formData })
+    return
+  }
+  
   if (!validateForm()) {
     return
   }

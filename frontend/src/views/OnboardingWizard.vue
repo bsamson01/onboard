@@ -69,12 +69,33 @@
         </div>
       </div>
 
+      <!-- Read-Only Banner -->
+      <div v-if="isReadOnly && !isCompleted" class="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M8.257 3.099c.366-.446.957-.446 1.323 0l6.518 7.95c.329.401.04.951-.462.951H2.201c-.502 0-.791-.55-.462-.95l6.518-7.951zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-2a1 1 0 01-1-1V7a1 1 0 112 0v3a1 1 0 01-1 1z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-yellow-800">Application Read-Only</h3>
+            <p class="mt-1 text-sm text-yellow-700">
+              This application is currently being reviewed and cannot be modified. 
+              <span v-if="application?.status === 'under_review'">Your application is under review by our team.</span>
+              <span v-else-if="application?.status === 'approved'">Your application has been approved!</span>
+              <span v-else-if="application?.status === 'rejected'">Your application was not approved. Please contact support for more information.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
       <!-- Step Content -->
       <div class="card">
         <component
           :is="currentStepComponent"
           :application="application"
           :step-data="getCurrentStepData()"
+          :is-read-only="isReadOnly"
           @next="handleNext"
           @previous="handlePrevious"
           @update-data="handleDataUpdate"
@@ -121,6 +142,15 @@ const error = ref('')
 const isLoading = ref(false)
 const stepData = reactive({})
 const isCompleted = ref(false)
+
+// Computed property to determine if application is read-only
+const isReadOnly = computed(() => {
+  if (!application.value) return false
+  
+  // Application is read-only if status is not in editable states
+  const editableStatuses = ['draft', 'in_progress', 'pending_documents']
+  return !editableStatuses.includes(application.value.status?.toLowerCase())
+})
 
 const steps = [
   { number: 1, name: 'Personal Info', description: 'Basic details', component: 'PersonalInfoStep' },

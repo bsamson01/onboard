@@ -34,8 +34,9 @@
                       ref="governmentIdInput"
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
-                      class="sr-only"
+                      :disabled="isReadOnly"
                       @change="handleFileUpload('government_id', $event)"
+                      class="sr-only"
                     />
                   </label>
                   <p class="pl-3 self-center">or drag and drop</p>
@@ -75,8 +76,9 @@
                       ref="proofOfAddressInput"
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
-                      class="sr-only"
+                      :disabled="isReadOnly"
                       @change="handleFileUpload('proof_of_address', $event)"
+                      class="sr-only"
                     />
                   </label>
                   <p class="pl-3 self-center">or drag and drop</p>
@@ -128,8 +130,9 @@
                       ref="bankStatementInput"
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
-                      class="sr-only"
+                      :disabled="isReadOnly"
                       @change="handleFileUpload('bank_statement', $event)"
+                      class="sr-only"
                     />
                   </label>
                   <p class="pl-3 self-center">or drag and drop</p>
@@ -163,8 +166,9 @@
                       ref="payStubInput"
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
-                      class="sr-only"
+                      :disabled="isReadOnly"
                       @change="handleFileUpload('pay_stub', $event)"
+                      class="sr-only"
                     />
                   </label>
                   <p class="pl-3 self-center">or drag and drop</p>
@@ -259,7 +263,7 @@
         </button>
         <button
           type="submit"
-          :disabled="isSubmitting || !hasRequiredDocuments"
+          :disabled="isSubmitting || (!hasRequiredDocuments && !isReadOnly)"
           class="px-6 py-3 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
         >
           <span v-if="isSubmitting" class="flex items-center">
@@ -293,6 +297,10 @@ const props = defineProps({
   stepData: {
     type: Object,
     default: () => ({})
+  },
+  isReadOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -377,80 +385,22 @@ const uploadDocument = async (file, documentType) => {
 }
 
 const handleSubmit = async () => {
-  if (!validateForm()) {
+  if (isReadOnly) {
+    // In read-only mode, just navigate to next step without validation or submission
+    emit('next', { documents: uploadedDocuments.value })
+    return
+  }
+  
+  if (!hasRequiredDocuments.value) {
     return
   }
   
   isSubmitting.value = true
   
   try {
-    // Upload each document individually
-    const uploadPromises = []
-    
-    // Map field names to document types
-    const documentTypeMap = {
-      government_id: 'national_id',
-      proof_of_address: 'proof_of_residence',
-      bank_statement: 'bank_statement',
-      pay_stub: 'payslip'
-    }
-    
-    // Upload required documents first
-    if (uploadedFiles.government_id) {
-      uploadPromises.push(
-        uploadDocument(uploadedFiles.government_id, documentTypeMap.government_id)
-          .then(result => {
-            uploadedDocuments.government_id = result
-          })
-      )
-    }
-    
-    if (uploadedFiles.proof_of_address) {
-      uploadPromises.push(
-        uploadDocument(uploadedFiles.proof_of_address, documentTypeMap.proof_of_address)
-          .then(result => {
-            uploadedDocuments.proof_of_address = result
-          })
-      )
-    }
-    
-    // Upload optional documents
-    if (uploadedFiles.bank_statement) {
-      uploadPromises.push(
-        uploadDocument(uploadedFiles.bank_statement, documentTypeMap.bank_statement)
-          .then(result => {
-            uploadedDocuments.bank_statement = result
-          })
-      )
-    }
-    
-    if (uploadedFiles.pay_stub) {
-      uploadPromises.push(
-        uploadDocument(uploadedFiles.pay_stub, documentTypeMap.pay_stub)
-          .then(result => {
-            uploadedDocuments.pay_stub = result
-          })
-      )
-    }
-    
-    // Wait for all uploads to complete
-    await Promise.all(uploadPromises)
-    
-    // Create step data with document references
-    const stepData = {
-      documents: uploadedDocuments,
-      uploaded_files: {
-        government_id: uploadedFiles.government_id?.name,
-        proof_of_address: uploadedFiles.proof_of_address?.name,
-        bank_statement: uploadedFiles.bank_statement?.name,
-        pay_stub: uploadedFiles.pay_stub?.name
-      }
-    }
-    
-    emit('next', stepData)
+    emit('next', { documents: uploadedDocuments.value })
   } catch (error) {
-    console.error('Error uploading files:', error)
-    errors.upload = 'Failed to upload documents. Please try again.'
+    console.error('Error submitting documents:', error)
   } finally {
     isSubmitting.value = false
   }

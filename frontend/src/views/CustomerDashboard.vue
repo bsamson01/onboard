@@ -1,6 +1,19 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      <!-- Status/Info Alert -->
+      <div v-if="statusMessage" :class="statusMessage.class" class="rounded-lg p-4 mb-6 flex items-start">
+        <div class="flex-shrink-0 mt-1">
+          <svg v-if="statusMessage.type === 'success'" class="h-6 w-6 text-green-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+          <svg v-else-if="statusMessage.type === 'error'" class="h-6 w-6 text-red-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+          <svg v-else-if="statusMessage.type === 'warning'" class="h-6 w-6 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.366-.446.957-.446 1.323 0l6.518 7.95c.329.401.04.951-.462.951H2.201c-.502 0-.791-.55-.462-.95l6.518-7.951zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-2a1 1 0 01-1-1V7a1 1 0 112 0v3a1 1 0 01-1 1z" clip-rule="evenodd" /></svg>
+          <svg v-else class="h-6 w-6 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-8-4a1 1 0 100 2 1 1 0 000-2zm2 8a1 1 0 01-2 0v-1a1 1 0 012 0v1z" clip-rule="evenodd" /></svg>
+        </div>
+        <div class="ml-3">
+          <p class="text-sm font-medium" :class="statusMessage.textClass">{{ statusMessage.text }}</p>
+        </div>
+      </div>
+
       <!-- Welcome Section -->
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-8">
         <div class="flex items-center justify-between">
@@ -373,19 +386,83 @@ const error = ref('')
 
 // Computed properties
 const hasCompletedOnboarding = computed(() => {
-  return onboardingApplications.value.some(app => app.status === 'approved')
+  // Use user profile's user_state to determine onboarding
+  return authStore.user?.user_state?.toLowerCase() === 'onboarded'
 })
 
 const canApplyForLoan = computed(() => {
-  return hasCompletedOnboarding.value && 
-         loanEligibility.value?.is_eligible === true &&
-         !loanApplications.value.some(app => ['in_progress', 'submitted', 'under_review'].includes(app.status))
+  // Only allow if onboarded and user_state is onboarded
+  return hasCompletedOnboarding.value
 })
 
 const allApplications = computed(() => {
   const onboarding = onboardingApplications.value.map(app => ({ ...app, type: 'onboarding' }))
   const loans = loanApplications.value.map(app => ({ ...app, type: 'loan' }))
   return [...onboarding, ...loans].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+})
+
+const statusMessage = computed(() => {
+  if (isLoading.value) return null
+  if (error.value) {
+    return {
+      type: 'error',
+      class: 'bg-red-50 border border-red-200',
+      textClass: 'text-red-800',
+      text: error.value
+    }
+  }
+  if (!hasCompletedOnboarding.value) {
+    if (onboardingApplications.value.length === 0) {
+      return {
+        type: 'info',
+        class: 'bg-blue-50 border border-blue-200',
+        textClass: 'text-blue-800',
+        text: 'You have not started onboarding. Complete onboarding to access loan services.'
+      }
+    }
+    const app = onboardingApplications.value[0]
+    if (app.status === 'in_progress') {
+      return {
+        type: 'warning',
+        class: 'bg-yellow-50 border border-yellow-200',
+        textClass: 'text-yellow-800',
+        text: 'Your onboarding is in progress. Continue your application to complete onboarding.'
+      }
+    }
+    if (app.status === 'under_review') {
+      return {
+        type: 'info',
+        class: 'bg-blue-50 border border-blue-200',
+        textClass: 'text-blue-800',
+        text: 'Your onboarding is under review. Please wait for approval.'
+      }
+    }
+    if (app.status === 'rejected') {
+      return {
+        type: 'error',
+        class: 'bg-red-50 border border-red-200',
+        textClass: 'text-red-800',
+        text: 'Your onboarding was rejected. Please contact support or re-apply.'
+      }
+    }
+  } else {
+    // Onboarded
+    if (!canApplyForLoan.value) {
+      return {
+        type: 'warning',
+        class: 'bg-yellow-50 border border-yellow-200',
+        textClass: 'text-yellow-800',
+        text: 'You are onboarded, but not currently eligible to apply for a loan. See eligibility info for details.'
+      }
+    }
+    return {
+      type: 'success',
+      class: 'bg-green-50 border border-green-200',
+      textClass: 'text-green-800',
+      text: 'You are fully onboarded! You can now apply for loans.'
+    }
+  }
+  return null
 })
 
 // Methods

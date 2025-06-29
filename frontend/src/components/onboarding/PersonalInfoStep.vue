@@ -23,8 +23,12 @@
               v-model="formData.first_name"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.first_name }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.first_name,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your first name"
             />
             <p v-if="errors.first_name" class="text-sm text-red-600 flex items-center">
@@ -42,8 +46,12 @@
               v-model="formData.last_name"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.last_name }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.last_name,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your last name"
             />
             <p v-if="errors.last_name" class="text-sm text-red-600 flex items-center">
@@ -61,8 +69,12 @@
               v-model="formData.date_of_birth"
               type="date"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.date_of_birth }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.date_of_birth,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
             />
             <p v-if="errors.date_of_birth" class="text-sm text-red-600 flex items-center">
               <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -78,8 +90,12 @@
               id="gender"
               v-model="formData.gender"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.gender }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.gender,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
             >
               <option value="">Select gender</option>
               <option value="male">Male</option>
@@ -102,8 +118,12 @@
               v-model="formData.nationality"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.nationality }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.nationality,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your nationality"
             />
             <p v-if="errors.nationality" class="text-sm text-red-600 flex items-center">
@@ -121,8 +141,12 @@
               v-model="formData.id_number"
               type="text"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.id_number }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.id_number,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="Enter your ID number"
             />
             <p v-if="errors.id_number" class="text-sm text-red-600 flex items-center">
@@ -151,8 +175,12 @@
               id="marital_status"
               v-model="formData.marital_status"
               required
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.marital_status }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.marital_status,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
             >
               <option value="">Select marital status</option>
               <option value="single">Single</option>
@@ -177,8 +205,12 @@
               type="number"
               min="0"
               max="20"
+              :disabled="isReadOnly"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-              :class="{ 'border-red-300 focus:ring-red-500 focus:border-red-500': errors.dependents }"
+              :class="{ 
+                'border-red-300 focus:ring-red-500 focus:border-red-500': errors.dependents,
+                'bg-gray-100 cursor-not-allowed': isReadOnly
+              }"
               placeholder="0"
             />
             <p v-if="errors.dependents" class="text-sm text-red-600 flex items-center">
@@ -216,7 +248,7 @@
             Saving...
           </span>
           <span v-else class="flex items-center">
-            Next
+            {{ isReadOnly ? 'Next' : 'Next' }}
             <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
@@ -238,6 +270,10 @@ const props = defineProps({
   stepData: {
     type: Object,
     default: () => ({})
+  },
+  isReadOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -322,6 +358,12 @@ const validateForm = () => {
 }
 
 const handleSubmit = async () => {
+  if (isReadOnly) {
+    // In read-only mode, just navigate to next step without validation or submission
+    emit('next', { ...formData })
+    return
+  }
+  
   if (!validateForm()) {
     return
   }

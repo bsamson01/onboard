@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime
 import logging
 import uuid as uuid_lib
+import traceback
 
 from app.database import get_async_db
 from app.models.user import User
@@ -623,7 +624,298 @@ async def get_staff_activities(
     return {"activities": activity_list, "limit": limit, "offset": offset}
 
 
-# Helper functions
+@router.get("/users/outdated")
+async def get_outdated_users(
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Get users with outdated profiles."""
+    try:
+        outdated_users = await user_state_service.get_outdated_users(session)
+        
+        user_list = []
+        for user in outdated_users:
+            user_data = {
+                "id": str(user.id),
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "user_state": user.user_state.value,
+                "profile_expiry_date": user.profile_expiry_date.isoformat() if user.profile_expiry_date else None,
+                "last_profile_update": user.last_profile_update.isoformat() if user.last_profile_update else None,
+                "onboarding_completed_at": user.onboarding_completed_at.isoformat() if user.onboarding_completed_at else None
+            }
+            user_list.append(user_data)
+        
+        return {
+            "outdated_users": user_list,
+            "count": len(user_list)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get outdated users: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve outdated users"
+        )
+
+
+@router.post("/users/bulk-operations", response_model=BulkUserOperationResponse)
+async def bulk_user_operations(
+    bulk_request: BulkUserOperationRequest,
+    request: Request,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Perform bulk operations on multiple users (admin only)."""
+    try:
+        success_count = 0
+        failure_count = 0
+        failed_user_ids = []
+        errors = []
+        
+        for user_id in bulk_request.user_ids:
+            try:
+                # Get user
+                stmt = select(User).where(User.id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalar()
+                
+                if not user:
+                    failure_count += 1
+                    failed_user_ids.append(user_id)
+                    errors.append(f"User {user_id} not found")
+                    continue
+                
+                # Prevent self-modification for certain operations
+                if str(user.id) == str(current_user.id) and bulk_request.operation in ['deactivate', 'lock']:
+                    failure_count += 1
+                    failed_user_ids.append(user_id)
+                    errors.append(f"Cannot {bulk_request.operation} your own account")
+                    continue
+                
+                # Perform operation
+                if bulk_request.operation == 'activate':
+                    user.is_active = True
+                    user.is_locked = False
+                    user.failed_login_attempts = 0
+                elif bulk_request.operation == 'deactivate':
+                    user.is_active = False
+                elif bulk_request.operation == 'verify':
+                    user.is_verified = True
+                elif bulk_request.operation == 'lock':
+                    user.is_locked = True
+                elif bulk_request.operation == 'unlock':
+                    user.is_locked = False
+                    user.failed_login_attempts = 0
+                else:
+                    failure_count += 1
+                    failed_user_ids.append(user_id)
+                    errors.append(f"Invalid operation: {bulk_request.operation}")
+                    continue
+                
+                success_count += 1
+                
+            except Exception as e:
+                failure_count += 1
+                failed_user_ids.append(user_id)
+                errors.append(f"Error processing user {user_id}: {str(e)}")
+                logger.error(f"Bulk operation error for user {user_id}: {str(e)}")
+        
+        # Commit all changes
+        await session.commit()
+        
+        # Log the bulk operation
+        try:
+            await log_audit_event(
+                AuditEvent.ADMIN_ACTION,
+                user_id=str(current_user.id),
+                details={
+                    "action": f"bulk_user_{bulk_request.operation}",
+                    "operation": bulk_request.operation,
+                    "total_users": len(bulk_request.user_ids),
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                    "reason": bulk_request.reason,
+                    "ip_address": request.client.host
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to log bulk operation audit: {str(e)}")
+        
+        return BulkUserOperationResponse(
+            success_count=success_count,
+            failure_count=failure_count,
+            total_count=len(bulk_request.user_ids),
+            failed_user_ids=failed_user_ids,
+            errors=errors
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to perform bulk user operations: {str(e)}")
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to perform bulk operations"
+        )
+
+
+@router.get("/users/{user_id}/profile", response_model=AdminUserProfileResponse)
+async def get_user_profile_admin(
+    user_id: str,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_async_db)
+):
+    """Get detailed user profile for admin view."""
+    try:
+        # Get user
+        stmt = select(User).where(User.id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get customer data
+        customer_data = None
+        documents = []
+        total_applications = 0
+        approved_applications = 0
+        rejected_applications = 0
+        pending_applications = 0
+        
+        customer_stmt = select(Customer).where(Customer.user_id == user.id)
+        customer_result = await session.execute(customer_stmt)
+        customer = customer_result.scalar()
+        
+        if customer:
+            # Build customer data
+            customer_data = {
+                "id": str(customer.id),
+                "customer_number": customer.customer_number,
+                "date_of_birth": customer.date_of_birth.isoformat() if customer.date_of_birth else None,
+                "gender": customer.gender,
+                "nationality": customer.nationality,
+                "id_number": customer.id_number,
+                "employment_status": customer.employment_status,
+                "employer_name": customer.employer_name,
+                "monthly_income": float(customer.monthly_income) if customer.monthly_income else None,
+                "is_verified": customer.is_verified,
+                "verification_completed_at": customer.verification_completed_at.isoformat() if customer.verification_completed_at else None
+            }
+            
+            # Get documents
+            documents_stmt = select(Document).where(Document.customer_id == customer.id)
+            documents_result = await session.execute(documents_stmt)
+            customer_documents = documents_result.scalars().all()
+            
+            for doc in customer_documents:
+                doc_response = DocumentResponse(
+                    id=str(doc.id),
+                    document_type=doc.document_type,
+                    document_name=doc.document_name,
+                    status=doc.status,
+                    is_required=doc.is_required,
+                    expires_at=doc.expires_at.isoformat() if doc.expires_at else None,
+                    is_expired=doc.is_expired,
+                    uploaded_at=doc.uploaded_at,
+                    verified_at=doc.verified_at,
+                    verification_notes=doc.verification_notes,
+                    file_size=doc.file_size,
+                    mime_type=doc.mime_type
+                )
+                documents.append(doc_response)
+            
+            # Get application statistics
+            applications_stmt = select(OnboardingApplication).where(OnboardingApplication.customer_id == customer.id)
+            applications_result = await session.execute(applications_stmt)
+            applications = applications_result.scalars().all()
+            
+            total_applications = len(applications)
+            for app in applications:
+                if app.status == OnboardingStatus.APPROVED:
+                    approved_applications += 1
+                elif app.status == OnboardingStatus.REJECTED:
+                    rejected_applications += 1
+                elif app.status in [OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS, OnboardingStatus.UNDER_REVIEW]:
+                    pending_applications += 1
+        
+        # Get role history
+        role_history = []
+        history_stmt = select(UserRoleHistory).where(UserRoleHistory.user_id == user.id).order_by(UserRoleHistory.changed_at.desc())
+        history_result = await session.execute(history_stmt)
+        history_records = history_result.scalars().all()
+        
+        for record in history_records:
+            # Get changed_by user info
+            changed_by_name = None
+            if record.changed_by_id:
+                changed_by_stmt = select(User).where(User.id == record.changed_by_id)
+                changed_by_result = await session.execute(changed_by_stmt)
+                changed_by_user = changed_by_result.scalar()
+                if changed_by_user:
+                    changed_by_name = f"{changed_by_user.first_name} {changed_by_user.last_name}"
+            
+            history_response = UserRoleHistoryResponse(
+                id=str(record.id),
+                user_id=str(record.user_id),
+                old_role=record.old_role,
+                new_role=record.new_role,
+                changed_by_id=str(record.changed_by_id) if record.changed_by_id else None,
+                changed_by_name=changed_by_name,
+                changed_at=record.changed_at,
+                reason=record.reason
+            )
+            role_history.append(history_response)
+        
+        # Build response
+        admin_profile_response = AdminUserProfileResponse(
+            id=str(user.id),
+            email=user.email,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            phone_number=user.phone_number,
+            role=user.role,
+            user_state=user.user_state,
+            is_active=user.is_active,
+            is_verified=user.is_verified,
+            is_locked=user.is_locked,
+            failed_login_attempts=user.failed_login_attempts,
+            last_login=user.last_login,
+            created_at=user.created_at,
+            onboarding_completed_at=user.onboarding_completed_at,
+            last_profile_update=user.last_profile_update,
+            profile_expiry_date=user.profile_expiry_date,
+            profile_completion_percentage=user.profile_completion_percentage,
+            can_create_loans=user.can_create_loans,
+            customer_data=customer_data,
+            documents=documents,
+            role_history=role_history,
+            total_applications=total_applications,
+            approved_applications=approved_applications,
+            rejected_applications=rejected_applications,
+            pending_applications=pending_applications
+        )
+        
+        return admin_profile_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get user profile for admin view: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve user profile: {str(e)}"
+        )
+
+
+# ===== HELPER FUNCTIONS =====
+
 async def _get_user_count(session: AsyncSession) -> int:
     """Get total user count."""
     try:
@@ -854,414 +1146,3 @@ async def _test_scorecard_connection(url: str, api_key: str) -> Dict[str, Any]:
 async def _get_last_health_check(service: str) -> str:
     """Get last health check timestamp for a service."""
     return datetime.utcnow().isoformat()
-
-
-# ===== NEW USER PROFILE MANAGEMENT ENDPOINTS =====
-
-@router.get("/users/{user_id}/profile", response_model=AdminUserProfileResponse)
-async def get_user_profile_admin(
-    user_id: str,
-    current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_db)
-):
-    """Get detailed user profile for admin view."""
-    try:
-        # Get user
-        stmt = select(User).where(User.id == user_id)
-        result = await session.execute(stmt)
-        user = result.scalar()
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # Get customer data
-        customer_data = None
-        documents = []
-        total_applications = 0
-        approved_applications = 0
-        rejected_applications = 0
-        pending_applications = 0
-        
-        customer_stmt = select(Customer).where(Customer.user_id == user.id)
-        customer_result = await session.execute(customer_stmt)
-        customer = customer_result.scalar()
-        
-        if customer:
-            # Build customer data
-            customer_data = {
-                "id": str(customer.id),
-                "customer_number": customer.customer_number,
-                "date_of_birth": customer.date_of_birth.isoformat() if customer.date_of_birth else None,
-                "gender": customer.gender,
-                "nationality": customer.nationality,
-                "id_number": customer.id_number,
-                "employment_status": customer.employment_status,
-                "employer_name": customer.employer_name,
-                "monthly_income": float(customer.monthly_income) if customer.monthly_income else None,
-                "is_verified": customer.is_verified,
-                "verification_completed_at": customer.verification_completed_at.isoformat() if customer.verification_completed_at else None
-            }
-            
-            # Get documents
-            documents_stmt = select(Document).where(Document.customer_id == customer.id)
-            documents_result = await session.execute(documents_stmt)
-            customer_documents = documents_result.scalars().all()
-            
-            for doc in customer_documents:
-                doc_response = DocumentResponse(
-                    id=str(doc.id),
-                    document_type=doc.document_type,
-                    document_name=doc.document_name,
-                    status=doc.status,
-                    is_required=doc.is_required,
-                    expires_at=doc.expires_at.isoformat() if doc.expires_at else None,
-                    is_expired=doc.is_expired,
-                    uploaded_at=doc.uploaded_at,
-                    verified_at=doc.verified_at,
-                    verification_notes=doc.verification_notes,
-                    file_size=doc.file_size,
-                    mime_type=doc.mime_type
-                )
-                documents.append(doc_response)
-            
-            # Get application statistics
-            applications_stmt = select(OnboardingApplication).where(OnboardingApplication.customer_id == customer.id)
-            applications_result = await session.execute(applications_stmt)
-            applications = applications_result.scalars().all()
-            
-            total_applications = len(applications)
-            for app in applications:
-                if app.status == OnboardingStatus.APPROVED:
-                    approved_applications += 1
-                elif app.status == OnboardingStatus.REJECTED:
-                    rejected_applications += 1
-                elif app.status in [OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS, OnboardingStatus.UNDER_REVIEW]:
-                    pending_applications += 1
-        
-        # Get role history
-        role_history = []
-        history_stmt = select(UserRoleHistory).where(UserRoleHistory.user_id == user.id).order_by(UserRoleHistory.changed_at.desc())
-        history_result = await session.execute(history_stmt)
-        history_records = history_result.scalars().all()
-        
-        for record in history_records:
-            # Get changed_by user info
-            changed_by_name = None
-            if record.changed_by_id:
-                changed_by_stmt = select(User).where(User.id == record.changed_by_id)
-                changed_by_result = await session.execute(changed_by_stmt)
-                changed_by_user = changed_by_result.scalar()
-                if changed_by_user:
-                    changed_by_name = f"{changed_by_user.first_name} {changed_by_user.last_name}"
-            
-            history_response = UserRoleHistoryResponse(
-                id=str(record.id),
-                user_id=str(record.user_id),
-                old_role=record.old_role,
-                new_role=record.new_role,
-                changed_by_id=str(record.changed_by_id) if record.changed_by_id else None,
-                changed_by_name=changed_by_name,
-                changed_at=record.changed_at,
-                reason=record.reason
-            )
-            role_history.append(history_response)
-        
-        # Build response
-        admin_profile_response = AdminUserProfileResponse(
-            id=str(user.id),
-            email=user.email,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            phone_number=user.phone_number,
-            role=user.role,
-            user_state=user.user_state,
-            is_active=user.is_active,
-            is_verified=user.is_verified,
-            is_locked=user.is_locked,
-            failed_login_attempts=user.failed_login_attempts,
-            last_login=user.last_login,
-            created_at=user.created_at,
-            onboarding_completed_at=user.onboarding_completed_at,
-            last_profile_update=user.last_profile_update,
-            profile_expiry_date=user.profile_expiry_date,
-            profile_completion_percentage=user.profile_completion_percentage,
-            can_create_loans=user.can_create_loans,
-            customer_data=customer_data,
-            documents=documents,
-            role_history=role_history,
-            total_applications=total_applications,
-            approved_applications=approved_applications,
-            rejected_applications=rejected_applications,
-            pending_applications=pending_applications
-        )
-        
-        return admin_profile_response
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get user profile for admin view: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve user profile"
-        )
-
-
-@router.put("/users/{user_id}/role")
-async def update_user_role(
-    user_id: str,
-    role_update: RoleUpdateRequest,
-    request: Request,
-    current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_db)
-):
-    """Update user role (admin only)."""
-    try:
-        # Validate UUID format
-        try:
-            uuid_lib.UUID(user_id)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid user ID format"
-            )
-        
-        # Validate admin permissions
-        if not current_user or not current_user.is_admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin privileges required"
-            )
-        
-        if current_user.is_locked:
-            raise HTTPException(
-                status_code=status.HTTP_423_LOCKED,
-                detail="Admin account is locked"
-            )
-        
-        # Get user to update with error handling
-        try:
-            stmt = select(User).where(User.id == user_id)
-            result = await session.execute(stmt)
-            user_to_update = result.scalar()
-        except SQLAlchemyError as e:
-            logger.error(f"Database error retrieving user {user_id}: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database error retrieving user"
-            )
-        
-        if not user_to_update:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # Security checks
-        if str(user_to_update.id) == str(current_user.id):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot change your own role"
-            )
-        
-        # Prevent demoting the last admin
-        if (user_to_update.role == UserRole.ADMIN and 
-            role_update.new_role != UserRole.ADMIN):
-            admin_count = await session.scalar(
-                select(func.count(User.id)).where(
-                    and_(User.role == UserRole.ADMIN, User.is_active == True)
-                )
-            )
-            if admin_count <= 1:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot remove the last admin user"
-                )
-        
-        # Store old role for comparison
-        old_role = user_to_update.role
-        
-        # Check if role is actually changing
-        if old_role == role_update.new_role:
-            return {
-                "message": "User role is already set to the requested role",
-                "user_id": str(user_to_update.id),
-                "role": old_role.value
-            }
-        
-        # Transaction for role update
-        try:
-            # Update role
-            user_to_update.role = role_update.new_role
-            
-            # Create role history record
-            role_history = UserRoleHistory(
-                user_id=user_to_update.id,
-                old_role=old_role.value,
-                new_role=role_update.new_role.value,
-                changed_by_id=current_user.id,
-                reason=role_update.reason or "Role changed by admin"
-            )
-            session.add(role_history)
-            
-            await session.commit()
-            
-        except SQLAlchemyError as e:
-            logger.error(f"Database error updating user role: {str(e)}")
-            await session.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update user role in database"
-            )
-        
-        # Log the action (outside transaction)
-        try:
-            await audit_service.log_onboarding_action(
-                user_id=str(current_user.id),
-                action="user_role_changed",
-                resource_type="user",
-                resource_id=str(user_to_update.id),
-                old_values={"role": old_role.value},
-                new_values={"role": role_update.new_role.value},
-                ip_address=request.client.host,
-                user_agent=request.headers.get("user-agent"),
-                additional_data={
-                    "reason": role_update.reason,
-                    "target_user_email": user_to_update.email,
-                    "admin_user_email": current_user.email
-                }
-            )
-        except Exception as e:
-            logger.error(f"Failed to log role change audit: {str(e)}")
-        
-        try:
-            log_audit_event(
-                AuditEvent.ADMIN_ACTION,
-                user_id=str(current_user.id),
-                details={
-                    "action": "user_role_changed",
-                    "target_user_id": str(user_to_update.id),
-                    "old_role": old_role.value,
-                    "new_role": role_update.new_role.value,
-                    "ip_address": request.client.host
-                }
-            )
-        except Exception as e:
-            logger.error(f"Failed to log admin action: {str(e)}")
-        
-        return {
-            "message": "User role updated successfully",
-            "user_id": str(user_to_update.id),
-            "old_role": old_role.value,
-            "new_role": role_update.new_role.value,
-            "changed_by": current_user.email,
-            "reason": role_update.reason
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update user role: {str(e)}")
-        await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update user role"
-        )
-
-
-@router.put("/users/{user_id}/state")
-async def update_user_state(
-    user_id: str,
-    state_update: StateUpdateRequest,
-    request: Request,
-    current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_db)
-):
-    """Update user state (admin only)."""
-    try:
-        # Get user to update
-        stmt = select(User).where(User.id == user_id)
-        result = await session.execute(stmt)
-        user_to_update = result.scalar()
-        
-        if not user_to_update:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # Update user state using service
-        await user_state_service.update_user_state(
-            user_to_update,
-            state_update.new_state,
-            session,
-            reason=f"Admin update: {state_update.reason or 'Manual state change'}"
-        )
-        
-        # Log additional admin action
-        log_audit_event(
-            AuditEvent.ADMIN_ACTION,
-            user_id=str(current_user.id),
-            details={
-                "action": "user_state_changed_by_admin",
-                "target_user_id": str(user_to_update.id),
-                "new_state": state_update.new_state.value,
-                "reason": state_update.reason,
-                "ip_address": request.client.host
-            }
-        )
-        
-        return {
-            "message": "User state updated successfully",
-            "user_id": str(user_to_update.id),
-            "new_state": state_update.new_state.value
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update user state: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update user state"
-        )
-
-
-@router.get("/users/outdated")
-async def get_outdated_users(
-    current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_async_db)
-):
-    """Get users with outdated profiles."""
-    try:
-        outdated_users = await user_state_service.get_outdated_users(session)
-        
-        user_list = []
-        for user in outdated_users:
-            user_data = {
-                "id": str(user.id),
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "user_state": user.user_state.value,
-                "profile_expiry_date": user.profile_expiry_date.isoformat() if user.profile_expiry_date else None,
-                "last_profile_update": user.last_profile_update.isoformat() if user.last_profile_update else None,
-                "onboarding_completed_at": user.onboarding_completed_at.isoformat() if user.onboarding_completed_at else None
-            }
-            user_list.append(user_data)
-        
-        return {
-            "outdated_users": user_list,
-            "count": len(user_list)
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to get outdated users: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve outdated users"
-        )

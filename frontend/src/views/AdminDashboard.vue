@@ -241,7 +241,7 @@
 
           <!-- Users Tab -->
           <div v-if="isAdmin && activeTab === 'users'" class="space-y-6">
-            <UsersPanel :users="users" :isAdmin="isAdmin" @refresh="loadUsers" @delete="deleteUser" />
+            <UsersPanel :users="users" :isAdmin="isAdmin" :currentUserId="authStore.user?.id" @refresh="loadUsers" @delete="deleteUser" />
           </div>
 
           <!-- Audit Logs Tab -->
@@ -792,6 +792,7 @@ onMounted(async () => {
   await loadSystemHealth()
   await loadExternalServices()
   await loadApplications()
+  await loadUsers()
 })
 </script>
 

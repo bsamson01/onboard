@@ -551,6 +551,19 @@ async def update_application_status(
             # Update onboarding application status
             onboarding_application.status = new_onboarding_status
             
+            # Update user state based on onboarding application status
+            user_stmt = select(User).where(User.id == onboarding_application.customer.user_id)
+            user_result = await session.execute(user_stmt)
+            user = user_result.scalar()
+            
+            if user:
+                if new_onboarding_status == OnboardingStatus.UNDER_REVIEW:
+                    user.user_state = 'onboarding'
+                elif new_onboarding_status == OnboardingStatus.APPROVED:
+                    user.user_state = 'onboarded'
+                elif new_onboarding_status == OnboardingStatus.REJECTED:
+                    user.user_state = 'registered'
+            
             # Update specific timestamp fields based on status
             now = datetime.utcnow()
             if new_onboarding_status == OnboardingStatus.UNDER_REVIEW:
@@ -706,6 +719,13 @@ async def cancel_application(
             onboarding_application.status = OnboardingStatus.REJECTED
             onboarding_application.cancellation_reason = cancel_request.reason
             onboarding_application.cancelled_at = datetime.utcnow()
+            
+            # Update user state to 'registered' when application is cancelled
+            user_stmt = select(User).where(User.id == onboarding_application.customer.user_id)
+            user_result = await session.execute(user_stmt)
+            user = user_result.scalar()
+            if user:
+                user.user_state = 'registered'
             
             await session.commit()
             await session.refresh(onboarding_application)

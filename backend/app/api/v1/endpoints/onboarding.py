@@ -306,10 +306,11 @@ async def complete_onboarding_step(
             raise HTTPException(status_code=404, detail="Onboarding application not found")
         
         # Validate application can be modified
-        if application.status not in [OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS]:
+        editable_statuses = [OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS, OnboardingStatus.PENDING_DOCUMENTS]
+        if application.status not in editable_statuses:
             raise HTTPException(
                 status_code=400, 
-                detail="Application cannot be modified in its current status. Please contact support if you need to make changes."
+                detail="Application cannot be modified in its current status. The application is read-only once submitted for review."
             )
         
         # Get the specific step
@@ -667,6 +668,14 @@ async def upload_document(
         if not application:
             raise HTTPException(status_code=404, detail="Onboarding application not found")
         
+        # Validate application can be modified
+        editable_statuses = [OnboardingStatus.DRAFT, OnboardingStatus.IN_PROGRESS, OnboardingStatus.PENDING_DOCUMENTS]
+        if application.status not in editable_statuses:
+            raise HTTPException(
+                status_code=400, 
+                detail="Documents cannot be uploaded. The application is read-only once submitted for review."
+            )
+        
         # Get customer
         customer_stmt = select(Customer).where(Customer.id == application.customer_id)
         customer_result = await session.execute(customer_stmt)
@@ -782,6 +791,13 @@ async def submit_onboarding_application(
         if not application:
             raise HTTPException(status_code=404, detail="Onboarding application not found")
         
+        # Validate application can be submitted
+        if application.status != OnboardingStatus.PENDING_DOCUMENTS:
+            raise HTTPException(
+                status_code=400, 
+                detail="Application cannot be submitted in its current status. Please complete all steps first."
+            )
+        
         # Validate all steps are completed
         steps_stmt = select(OnboardingStep).where(
             OnboardingStep.application_id == application_id,
@@ -813,6 +829,13 @@ async def submit_onboarding_application(
         # Update application status
         application.status = OnboardingStatus.UNDER_REVIEW
         application.submitted_at = datetime.utcnow()
+        
+        # Update user state to 'onboarding' when application is submitted
+        user_stmt = select(User).where(User.id == current_user.id)
+        user_result = await session.execute(user_stmt)
+        user = user_result.scalar()
+        if user:
+            user.user_state = 'onboarding'
         
         await session.commit()
         

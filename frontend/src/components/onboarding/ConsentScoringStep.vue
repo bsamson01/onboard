@@ -291,12 +291,12 @@
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            Submitting...
+            Saving...
           </span>
           <span v-else class="flex items-center">
-            Submit Application
+            Next
             <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
           </span>
         </button>
@@ -316,6 +316,10 @@ const props = defineProps({
   stepData: {
     type: Object,
     default: () => ({})
+  },
+  isReadOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -452,6 +456,18 @@ const validateForm = () => {
 }
 
 const handleSubmit = async () => {
+  if (isReadOnly) {
+    // In read-only mode, just navigate to next step without validation or submission
+    const submissionData = {
+      ...consent,  // Send consent fields at top level
+      ...formData, // Send form data fields
+      credit_score: creditScore.value,
+      application_summary: { ...applicationSummary }
+    }
+    emit('next', submissionData)
+    return
+  }
+  
   if (!validateForm()) {
     return
   }
