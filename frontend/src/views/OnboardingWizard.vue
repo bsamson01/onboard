@@ -80,10 +80,18 @@
           <div class="ml-3">
             <h3 class="text-sm font-medium text-yellow-800">Application Read-Only</h3>
             <p class="mt-1 text-sm text-yellow-700">
-              This application is currently being reviewed and cannot be modified. 
-              <span v-if="application?.status === 'under_review'">Your application is under review by our team.</span>
-              <span v-else-if="application?.status === 'approved'">Your application has been approved!</span>
-              <span v-else-if="application?.status === 'rejected'">Your application was not approved. Please contact support for more information.</span>
+              <template v-if="application?.status === 'under_review'">
+                Your application is under review by our team.
+              </template>
+              <template v-else-if="application?.status === 'approved'">
+                Your application has been approved!
+              </template>
+              <template v-else-if="application?.status === 'rejected'">
+                Your application was not approved. Please contact support for more information.
+              </template>
+              <template v-else>
+                This application is currently being reviewed and cannot be modified.
+              </template>
             </p>
           </div>
         </div>
@@ -157,7 +165,7 @@ const steps = [
   { number: 2, name: 'Contact Info', description: 'Address & contacts', component: 'ContactInfoStep' },
   { number: 3, name: 'Financial Profile', description: 'Income & employment', component: 'FinancialProfileStep' },
   { number: 4, name: 'Documents', description: 'Upload ID docs', component: 'DocumentUploadStep' },
-  { number: 5, name: 'Review & Score', description: 'Consent & scoring', component: 'ConsentScoringStep' }
+  { number: 5, name: 'Consent', description: 'Consent & authorization', component: 'ConsentScoringStep' }
 ]
 
 const stepComponents = {

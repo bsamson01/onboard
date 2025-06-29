@@ -44,14 +44,6 @@
         </div>
         
         <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-500">Requested Amount</label>
-            <p class="text-lg font-semibold text-gray-900">{{ formatCurrency(applicationSummary?.loan_amount) }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-500">Loan Term</label>
-            <p class="text-lg font-semibold text-gray-900">{{ applicationSummary?.loan_term_months }} months</p>
-          </div>
           <div v-if="creditScore">
             <label class="block text-sm font-medium text-gray-500">Credit Score</label>
             <p class="text-lg font-semibold" :class="getCreditScoreColor(creditScore.score)">
@@ -242,9 +234,6 @@ Application Receipt
 Application Number: ${props.application?.application_number || 'N/A'}
 Submission Date: ${formatDate(new Date())}
 Status: Submitted for Review
-
-Requested Amount: ${formatCurrency(applicationSummary.value?.loan_amount)}
-Loan Term: ${applicationSummary.value?.loan_term_months || 'N/A'} months
 
 Thank you for your application!
   `.trim()
